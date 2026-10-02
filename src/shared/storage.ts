@@ -16,7 +16,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   transcriptRetention: "session",
 };
 
-function isExtensionContext(): boolean {
+export function isExtensionContext(): boolean {
   return (
     typeof chrome !== "undefined" &&
     typeof chrome.storage !== "undefined" &&
