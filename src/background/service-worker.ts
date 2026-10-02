@@ -5,6 +5,7 @@ import type {
   BackgroundToContent,
   ClientToServer,
   ServerToClient,
+  OffscreenToServiceWorker,
 } from "@/types/messages";
 import { MeetingStatus, CaptureState, type MeetingInfo } from "@/types/meeting";
 import { AgendaItemStatus, type AgendaState, type AgendaItem } from "@/types/agenda";
@@ -27,6 +28,8 @@ async function getBackendUrl(): Promise<string> {
 
 // ---- Session state ----
 
+const OFFSCREEN_URL = "src/offscreen/offscreen.html";
+
 const state = {
   meeting: {
     id: "",
@@ -47,6 +50,7 @@ const state = {
   hints: [] as Hint[],
   recentTranscript: [] as TranscriptSegment[],
   sessionId: null as string | null,
+  tabCaptureActive: false,
 };
 
 // ---- WebSocket client ----
@@ -88,7 +92,6 @@ function handleServerMessage(data: unknown): void {
     }
 
     case "NEW_TRANSCRIPT": {
-      // Add to recent transcript, keeping a bounded buffer
       const MAX_RECENT = 100;
       if (message.segment.isFinal) {
         state.recentTranscript.push(message.segment);
@@ -105,7 +108,6 @@ function handleServerMessage(data: unknown): void {
 
     case "NEW_HINT": {
       state.hints.push(message.hint);
-      // Keep only the most recent hints
       const MAX_HINTS = 50;
       if (state.hints.length > MAX_HINTS) {
         state.hints = state.hints.slice(-MAX_HINTS);
@@ -179,7 +181,6 @@ async function startConnection(): Promise<void> {
   const client = getWsClient();
   client.setUrl(url);
 
-  // Track connection state
   client.onStateChange((connectionState: ConnectionState) => {
     switch (connectionState) {
       case "connecting":
@@ -187,7 +188,6 @@ async function startConnection(): Promise<void> {
         state.meeting.status = MeetingStatus.Connecting;
         break;
       case "connected":
-        // Status will be set to Connected when SESSION_ACK arrives
         break;
       case "disconnected":
         if (state.meeting.captureState === CaptureState.Capturing) {
@@ -199,7 +199,6 @@ async function startConnection(): Promise<void> {
 
   client.onMessage(handleServerMessage);
 
-  // Build the CONNECT message
   const connectMsg: ClientToServer = {
     type: "CONNECT",
     meeting_id: state.meeting.id || `meeting-${Date.now()}`,
@@ -222,7 +221,6 @@ async function startConnection(): Promise<void> {
 
 function stopConnection(): void {
   if (wsClient) {
-    // Send AUDIO_STOP before disconnecting
     wsClient.send({ type: "AUDIO_STOP" } as ClientToServer);
     wsClient.disconnect();
   }
@@ -231,11 +229,92 @@ function stopConnection(): void {
   state.sessionId = null;
 }
 
+// ---------------------------------------------------------------------------
+// Offscreen document management
+// ---------------------------------------------------------------------------
+
+async function hasOffscreenDocument(): Promise<boolean> {
+  if (chrome.offscreen && typeof chrome.offscreen.hasDocument === "function") {
+    return chrome.offscreen.hasDocument();
+  }
+
+  if (chrome.runtime.getContexts) {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
+      documentUrls: [chrome.runtime.getURL(OFFSCREEN_URL)],
+    });
+    return contexts.length > 0;
+  }
+
+  return false;
+}
+
+async function ensureOffscreenDocument(): Promise<void> {
+  if (await hasOffscreenDocument()) {
+    return;
+  }
+
+  await chrome.offscreen.createDocument({
+    url: OFFSCREEN_URL,
+    reasons: [chrome.offscreen.Reason.USER_MEDIA],
+    justification: "Processing tab audio capture for meeting transcription",
+  });
+}
+
+async function closeOffscreenDocument(): Promise<void> {
+  if (await hasOffscreenDocument()) {
+    await chrome.offscreen.closeDocument();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tab capture management
+// ---------------------------------------------------------------------------
+
+async function startTabCapture(): Promise<boolean> {
+  try {
+    await ensureOffscreenDocument();
+    const streamId = await chrome.tabCapture.getMediaStreamId({});
+
+    await chrome.runtime.sendMessage({
+      type: "START_TAB_CAPTURE",
+      streamId,
+    });
+
+    state.tabCaptureActive = true;
+    console.log("[ServiceWorker] Tab capture initiated");
+    return true;
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown tab capture error";
+    console.warn("[ServiceWorker] Tab capture failed, microphone-only mode:", message);
+    await closeOffscreenDocument().catch(() => {});
+    state.tabCaptureActive = false;
+    return false;
+  }
+}
+
+async function stopTabCapture(): Promise<void> {
+  if (!state.tabCaptureActive) {
+    return;
+  }
+
+  try {
+    await chrome.runtime.sendMessage({ type: "STOP_TAB_CAPTURE" });
+  } catch {
+    // Offscreen document may already be closed
+  }
+
+  await closeOffscreenDocument().catch(() => {});
+  state.tabCaptureActive = false;
+  console.log("[ServiceWorker] Tab capture stopped");
+}
+
 // ---- Message listener ----
 
 chrome.runtime.onMessage.addListener(
   (
-    message: PopupToBackground | ContentToBackground,
+    message: PopupToBackground | ContentToBackground | OffscreenToServiceWorker,
     _sender,
     sendResponse,
   ) => {
@@ -255,12 +334,14 @@ chrome.runtime.onMessage.addListener(
       case "TOGGLE_CAPTURE": {
         if (state.meeting.captureState === CaptureState.Capturing) {
           stopConnection();
+          stopTabCapture().catch((err) =>
+            console.warn("[ServiceWorker] Error stopping tab capture:", err),
+          );
           broadcastToContentScripts({
             type: "CAPTURE_STATE",
             captureState: CaptureState.Stopped,
           });
         } else {
-          // Initialize default meeting info if not set
           if (!state.meeting.id) {
             state.meeting.id = `meeting-${Date.now()}`;
           }
@@ -275,6 +356,9 @@ chrome.runtime.onMessage.addListener(
           startConnection().catch((err) => {
             console.error("[ServiceWorker] Failed to start connection:", err);
           });
+          startTabCapture().catch((err) =>
+            console.warn("[ServiceWorker] Error starting tab capture:", err),
+          );
           broadcastToContentScripts({
             type: "CAPTURE_STATE",
             captureState: CaptureState.Capturing,
@@ -287,7 +371,6 @@ chrome.runtime.onMessage.addListener(
       case "DISMISS_HINT": {
         const hint = state.hints.find((h) => h.id === message.hintId);
         if (hint) hint.dismissed = true;
-        // Forward to backend
         if (wsClient) {
           wsClient.send({ type: "DISMISS_HINT", hint_id: message.hintId } as ClientToServer);
         }
@@ -296,11 +379,9 @@ chrome.runtime.onMessage.addListener(
       }
 
       case "TRANSCRIPT_SEGMENT": {
-        // Forward transcript segment from content script to backend
         if (wsClient) {
           wsClient.send({ type: "TRANSCRIPT", segment: message.segment } as ClientToServer);
         }
-        // Also store locally
         if (message.segment.isFinal) {
           state.recentTranscript.push(message.segment);
           const MAX_RECENT = 100;
@@ -313,7 +394,6 @@ chrome.runtime.onMessage.addListener(
       }
 
       case "CONTENT_READY":
-        // Send current state to the content script that just loaded
         broadcastToContentScripts({
           type: "STATE_UPDATE",
           meeting: state.meeting,
@@ -326,6 +406,22 @@ chrome.runtime.onMessage.addListener(
 
       case "UPDATE_SETTINGS":
         chrome.storage.local.set({ settings: message.settings });
+        sendResponse({ ok: true });
+        break;
+
+      // Messages from the offscreen document
+      case "TAB_CAPTURE_STARTED":
+        console.log("[ServiceWorker] Offscreen confirmed tab capture started");
+        sendResponse({ ok: true });
+        break;
+      case "TAB_CAPTURE_STOPPED":
+        state.tabCaptureActive = false;
+        console.log("[ServiceWorker] Offscreen confirmed tab capture stopped");
+        sendResponse({ ok: true });
+        break;
+      case "TAB_CAPTURE_ERROR":
+        state.tabCaptureActive = false;
+        console.warn("[ServiceWorker] Tab capture error:", message.error);
         sendResponse({ ok: true });
         break;
 
