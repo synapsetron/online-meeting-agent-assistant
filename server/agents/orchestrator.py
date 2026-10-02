@@ -33,6 +33,9 @@ class OrchestratorResult:
     time_warnings: list[Hint] = field(default_factory=list)
 
 
+_SUMMARY_INTERVAL = 10  # generate a rolling summary every N final segments
+
+
 class Orchestrator:
     def __init__(self, config: Config) -> None:
         self._config = config
@@ -48,6 +51,11 @@ class Orchestrator:
         self._last_llm_call_time: float = 0.0
         self._pending_segments: list[TranscriptSegment] = []
 
+        self._final_segment_count: int = 0
+        self._last_summary_segment_count: int = 0
+        self._summary_segments_buffer: list[TranscriptSegment] = []
+        self._summary_task: asyncio.Task[None] | None = None
+
     async def process_segment(
         self,
         segment: TranscriptSegment,
@@ -57,6 +65,9 @@ class Orchestrator:
 
         if not segment.is_final:
             return OrchestratorResult()
+
+        self._final_segment_count += 1
+        self._summary_segments_buffer.append(segment)
 
         analysis = self._analyzer.analyze(segment, state.agenda)
 
@@ -83,6 +94,11 @@ class Orchestrator:
             self._pending_segments.clear()
             hints = await self._call_hint_generator(state)
 
+        # Trigger rolling summary update every _SUMMARY_INTERVAL final segments.
+        segments_since = self._final_segment_count - self._last_summary_segment_count
+        if segments_since >= _SUMMARY_INTERVAL:
+            self._maybe_start_summary_update(state)
+
         return OrchestratorResult(
             agenda_delta=delta,
             hints=hints,
@@ -101,6 +117,38 @@ class Orchestrator:
                 rolling_summary=state.get_rolling_summary(),
                 recent_segments=recent,
             )
+
+    def _maybe_start_summary_update(self, state: MeetingStateStore) -> None:
+        """Kick off a background task to update the rolling summary, unless
+        one is already running."""
+        if self._summary_task is not None and not self._summary_task.done():
+            return
+
+        segments_to_summarize = list(self._summary_segments_buffer)
+        self._summary_segments_buffer.clear()
+        self._last_summary_segment_count = self._final_segment_count
+
+        self._summary_task = asyncio.create_task(
+            self._update_rolling_summary(state, segments_to_summarize)
+        )
+
+    async def _update_rolling_summary(
+        self,
+        state: MeetingStateStore,
+        segments: list[TranscriptSegment],
+    ) -> None:
+        """Ask the LLM to produce an updated rolling summary and persist it."""
+        try:
+            current = state.get_rolling_summary()
+            updated = await self._hint_gen.summarize_segments(current, segments)
+            state.update_rolling_summary(updated)
+            logger.info(
+                "Rolling summary updated (%d chars from %d segments)",
+                len(updated),
+                len(segments),
+            )
+        except Exception:
+            logger.exception("Failed to update rolling summary")
 
     @staticmethod
     def _check_time_warnings(
