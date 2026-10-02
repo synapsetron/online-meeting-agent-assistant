@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { loadSettings, saveSettings, type UserSettings } from "@/shared/storage";
+import { loadSettings, saveSettings, isExtensionContext, type UserSettings } from "@/shared/storage";
+import { DEFAULT_WS_URL, DEFAULT_SPEECH_LANGUAGE } from "@/shared/constants";
+import { useTheme } from "@/shared/hooks/useTheme";
 import "./options.css";
-
-const DEFAULT_BACKEND_URL = "ws://localhost:8000/ws";
-const DEFAULT_SPEECH_LANGUAGE = "uk-UA";
 
 const SPEECH_LANGUAGES = [
   { value: "uk-UA", label: "Ukrainian (Українська)" },
@@ -14,43 +13,29 @@ const SPEECH_LANGUAGES = [
   { value: "pl-PL", label: "Polish (Polski)" },
 ] as const;
 
-function isExtensionContext(): boolean {
-  return (
-    typeof chrome !== "undefined" &&
-    typeof chrome.storage !== "undefined" &&
-    typeof chrome.storage.local !== "undefined"
-  );
-}
-
 export function App() {
+  useTheme();
+
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [savedVisible, setSavedVisible] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
-  const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL);
+  const [backendUrl, setBackendUrl] = useState(DEFAULT_WS_URL);
   const [speechLanguage, setSpeechLanguage] = useState(DEFAULT_SPEECH_LANGUAGE);
-
-  const [isDark, setIsDark] = useState(
-    window.matchMedia("(prefers-color-scheme: dark)").matches,
-  );
 
   useEffect(() => {
     loadSettings().then(setSettings);
-    // Load backend URL and speech language from chrome.storage
     if (isExtensionContext()) {
       chrome.storage.local.get(["backendUrl", "speechLanguage"]).then((result) => {
         if (result.backendUrl) setBackendUrl(result.backendUrl as string);
         if (result.speechLanguage) setSpeechLanguage(result.speechLanguage as string);
       });
     }
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e: MediaQueryListEvent) => setIsDark(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
   }, []);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
+  const showSaved = useCallback(() => {
+    setSavedVisible(true);
+    setTimeout(() => setSavedVisible(false), 2000);
+  }, []);
 
   const update = useCallback(
     (partial: Partial<UserSettings>) => {
@@ -58,16 +43,10 @@ export function App() {
       const next = { ...settings, ...partial };
       setSettings(next);
       saveSettings(partial);
-      setSavedVisible(true);
-      setTimeout(() => setSavedVisible(false), 2000);
+      showSaved();
     },
-    [settings],
+    [settings, showSaved],
   );
-
-  const showSaved = useCallback(() => {
-    setSavedVisible(true);
-    setTimeout(() => setSavedVisible(false), 2000);
-  }, []);
 
   const handleBackendUrlChange = useCallback(
     (url: string) => {
@@ -103,30 +82,26 @@ export function App() {
         </span>
       </div>
 
-      {/* Backend Connection */}
       <div className="options-section">
         <h2 className="options-section-title">Backend Connection</h2>
-
         <div className="options-field">
           <label className="options-label">WebSocket URL</label>
           <input
             className="options-input"
             type="url"
-            placeholder={DEFAULT_BACKEND_URL}
+            placeholder={DEFAULT_WS_URL}
             value={backendUrl}
             onChange={(e) => handleBackendUrlChange(e.target.value)}
           />
           <p className="options-desc">
             The WebSocket endpoint of the meeting assistant backend server.
-            Default: {DEFAULT_BACKEND_URL}
+            Default: {DEFAULT_WS_URL}
           </p>
         </div>
       </div>
 
-      {/* Speech Recognition */}
       <div className="options-section">
         <h2 className="options-section-title">Speech Recognition</h2>
-
         <div className="options-field">
           <label className="options-label">Recognition language</label>
           <select
@@ -147,24 +122,19 @@ export function App() {
         </div>
       </div>
 
-      {/* API Keys */}
       <div className="options-section">
         <h2 className="options-section-title">API Configuration</h2>
-
         <div className="options-field">
           <label className="options-label">ASR API Key</label>
-          <div style={{ position: "relative" }}>
-            <input
-              className="options-input"
-              type={showApiKeys ? "text" : "password"}
-              placeholder="sk-..."
-              readOnly
-              value=""
-            />
-          </div>
+          <input
+            className="options-input"
+            type={showApiKeys ? "text" : "password"}
+            placeholder="sk-..."
+            readOnly
+            value=""
+          />
           <p className="options-desc">Speech recognition provider API key (not yet connected)</p>
         </div>
-
         <div className="options-field">
           <label className="options-label">LLM API Key</label>
           <input
@@ -176,7 +146,6 @@ export function App() {
           />
           <p className="options-desc">Language model API key for semantic analysis (not yet connected)</p>
         </div>
-
         <label className="options-checkbox-label" style={{ marginTop: 4 }}>
           <input
             type="checkbox"
@@ -185,16 +154,13 @@ export function App() {
           />
           Show API keys
         </label>
-
         <p className="options-desc" style={{ marginTop: 8 }}>
           Keys are stored locally in browser storage and never transmitted to third parties.
         </p>
       </div>
 
-      {/* Language */}
       <div className="options-section">
         <h2 className="options-section-title">Interface Language</h2>
-
         <div className="options-field">
           <label className="options-label">Primary meeting language</label>
           <select
@@ -209,10 +175,8 @@ export function App() {
         </div>
       </div>
 
-      {/* UI Preferences */}
       <div className="options-section">
         <h2 className="options-section-title">Interface</h2>
-
         <div className="options-field">
           <label className="options-label">Panel position</label>
           <select
@@ -224,7 +188,6 @@ export function App() {
             <option value="left">Left side</option>
           </select>
         </div>
-
         <div className="options-field">
           <label className="options-label">Theme</label>
           <div className="options-radio-group">
@@ -242,7 +205,6 @@ export function App() {
             ))}
           </div>
         </div>
-
         <div className="options-field">
           <label className="options-label">Font size</label>
           <div className="options-radio-group">
@@ -260,7 +222,6 @@ export function App() {
             ))}
           </div>
         </div>
-
         <div className="options-field">
           <label className="options-checkbox-label">
             <input
@@ -273,10 +234,8 @@ export function App() {
         </div>
       </div>
 
-      {/* Data Retention */}
       <div className="options-section">
         <h2 className="options-section-title">Data &amp; Privacy</h2>
-
         <div className="options-field">
           <label className="options-label">Transcript retention</label>
           <select
@@ -292,7 +251,6 @@ export function App() {
             <option value="30d">30 days</option>
           </select>
         </div>
-
         <div className="options-field">
           <label className="options-label">Storage usage</label>
           <div className="options-storage-bar">
@@ -300,14 +258,12 @@ export function App() {
           </div>
           <p className="options-desc">1.2 MB of 10 MB used (mock data)</p>
         </div>
-
         <div className="options-field">
           <button
             className="options-btn-danger"
             onClick={() => {
               if (confirm("Clear all stored data? This cannot be undone.")) {
-                setSavedVisible(true);
-                setTimeout(() => setSavedVisible(false), 2000);
+                showSaved();
               }
             }}
           >

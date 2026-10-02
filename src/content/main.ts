@@ -5,8 +5,7 @@ import { SpeechRecognitionService } from "@/shared/speech-recognition";
 import { CaptureState } from "@/types/meeting";
 import type { BackgroundToContent, ContentToBackground, PopupToBackground } from "@/types/messages";
 import { getMeetingCode, observeCallState } from "@/shared/meet-detector";
-
-const DEFAULT_LANGUAGE = "uk-UA";
+import { DEFAULT_SPEECH_LANGUAGE } from "@/shared/constants";
 
 let disconnectObserver: (() => void) | null = null;
 let host: ShadowHost | null = null;
@@ -19,7 +18,7 @@ function startRecognition(language?: string) {
     speechService.stop();
   }
 
-  const lang = language ?? DEFAULT_LANGUAGE;
+  const lang = language ?? DEFAULT_SPEECH_LANGUAGE;
   speechService = new SpeechRecognitionService(lang);
 
   if (!speechService.isSupported()) {
@@ -165,9 +164,9 @@ function destroyOverlay() {
 async function loadLanguageSetting(): Promise<string> {
   try {
     const result = await chrome.storage.local.get("speechLanguage");
-    return (result.speechLanguage as string) || DEFAULT_LANGUAGE;
+    return (result.speechLanguage as string) || DEFAULT_SPEECH_LANGUAGE;
   } catch {
-    return DEFAULT_LANGUAGE;
+    return DEFAULT_SPEECH_LANGUAGE;
   }
 }
 

@@ -4,6 +4,8 @@
  * and type-safe message handling.
  */
 
+import { DEFAULT_WS_URL } from "./constants";
+
 export type ConnectionState = "disconnected" | "connecting" | "connected" | "reconnecting";
 
 export type MessageCallback = (message: unknown) => void;
@@ -14,7 +16,6 @@ export interface WebSocketClientOptions {
   initialReconnectDelay?: number;
 }
 
-const DEFAULT_URL = "ws://localhost:8000/ws";
 const DEFAULT_INITIAL_RECONNECT_DELAY = 1000;
 const DEFAULT_MAX_RECONNECT_DELAY = 30000;
 
@@ -32,7 +33,7 @@ export class WebSocketClient {
   private connectMessage: unknown = null;
 
   constructor(options?: WebSocketClientOptions) {
-    this.url = options?.url ?? DEFAULT_URL;
+    this.url = options?.url ?? DEFAULT_WS_URL;
     this.initialReconnectDelay = options?.initialReconnectDelay ?? DEFAULT_INITIAL_RECONNECT_DELAY;
     this.maxReconnectDelay = options?.maxReconnectDelay ?? DEFAULT_MAX_RECONNECT_DELAY;
     this.reconnectDelay = this.initialReconnectDelay;
@@ -53,10 +54,6 @@ export class WebSocketClient {
     }
   }
 
-  /**
-   * Connect to the WebSocket server and send an initial connect message.
-   * The connect message is stored for reconnection.
-   */
   connect(connectMessage: unknown): void {
     this.connectMessage = connectMessage;
     this.shouldReconnect = true;
@@ -119,9 +116,6 @@ export class WebSocketClient {
     };
   }
 
-  /**
-   * Send a message through the WebSocket. The message is JSON-serialized.
-   */
   send(message: unknown): void {
     if (this.state !== "connected" || !this.ws) {
       console.warn("[WebSocketClient] Cannot send message, not connected. State:", this.state);
@@ -139,27 +133,16 @@ export class WebSocketClient {
     }
   }
 
-  /**
-   * Register a callback for incoming messages.
-   * Returns an unsubscribe function.
-   */
   onMessage(callback: MessageCallback): () => void {
     this.messageCallbacks.add(callback);
     return () => this.messageCallbacks.delete(callback);
   }
 
-  /**
-   * Register a callback for connection state changes.
-   * Returns an unsubscribe function.
-   */
   onStateChange(callback: (state: ConnectionState) => void): () => void {
     this.stateCallbacks.add(callback);
     return () => this.stateCallbacks.delete(callback);
   }
 
-  /**
-   * Disconnect and do not reconnect.
-   */
   disconnect(): void {
     this.shouldReconnect = false;
     this.connectMessage = null;
@@ -168,9 +151,6 @@ export class WebSocketClient {
     this.setState("disconnected");
   }
 
-  /**
-   * Update the server URL. Takes effect on the next connect/reconnect.
-   */
   setUrl(url: string): void {
     this.url = url;
   }

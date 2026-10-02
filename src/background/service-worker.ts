@@ -13,9 +13,9 @@ import type { Hint } from "@/types/hint";
 import type { TranscriptSegment } from "@/types/transcript";
 import { WebSocketClient, type ConnectionState } from "@/shared/websocket-client";
 
-// ---- Configurable settings ----
+import { DEFAULT_WS_URL } from "@/shared/constants";
 
-const DEFAULT_WS_URL = "ws://localhost:8000/ws";
+// ---- Configurable settings ----
 
 async function getBackendUrl(): Promise<string> {
   try {

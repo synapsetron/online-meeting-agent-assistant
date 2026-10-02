@@ -34,37 +34,22 @@ export function MeetingStatus({ status, title, startTime }: Props) {
   }, [status, startTime]);
 
   return (
-    <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+    <div className="meeting-status">
       <div
-        style={{
-          width: 10,
-          height: 10,
-          borderRadius: "50%",
-          background: config.dot,
-          flexShrink: 0,
-          animation: status === MeetingStatusEnum.Connected ? "pulse 2s ease-in-out infinite" : "none",
-        }}
+        className={`meeting-dot${status === MeetingStatusEnum.Connected ? " pulse" : ""}`}
+        style={{ background: config.dot }}
       />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: "var(--popup-text)",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
+      <div className="meeting-info">
+        <div className="meeting-title">
           {status === MeetingStatusEnum.Disconnected ? config.label : title}
         </div>
         {status === MeetingStatusEnum.Connected && (
-          <div style={{ fontSize: 12, color: "var(--popup-text-secondary)" }}>
+          <div className="meeting-subtitle">
             {config.label} · {formatDuration(elapsed)}
           </div>
         )}
         {status === MeetingStatusEnum.Ended && (
-          <div style={{ fontSize: 12, color: "var(--popup-text-secondary)" }}>
+          <div className="meeting-subtitle">
             Duration: {formatDuration(elapsed)}
           </div>
         )}

@@ -1,19 +1,5 @@
-/**
- * Google Meet detection utilities.
- *
- * Detects whether the current page is an active Google Meet call
- * and extracts the meeting code from the URL.
- */
-
-/** Pattern for a valid Google Meet meeting code: three groups of letters separated by hyphens. */
 const MEETING_CODE_PATTERN = /^\/([a-z]{3}-[a-z]{4}-[a-z]{3})$/;
 
-/**
- * Extract the meeting code from the current URL.
- * Returns null if the URL does not match the Google Meet meeting pattern.
- *
- * Example: "https://meet.google.com/abc-defg-hij" -> "abc-defg-hij"
- */
 export function getMeetingCode(): string | null {
   try {
     const url = new URL(window.location.href);
@@ -27,14 +13,6 @@ export function getMeetingCode(): string | null {
   }
 }
 
-/**
- * Check whether the current page appears to be an active Google Meet call.
- *
- * Looks for key DOM indicators:
- * - A valid meeting code in the URL
- * - Call control buttons (end call, mute, camera toggle)
- * - Participant video/avatar elements
- */
 export function isMeetCallActive(): boolean {
   // Must have a valid meeting code in the URL first
   if (!getMeetingCode()) {
@@ -68,14 +46,6 @@ export function isMeetCallActive(): boolean {
   return hasVideoElements || hasMeetUI;
 }
 
-/**
- * Observe DOM changes to detect when a Google Meet call starts or ends.
- *
- * Calls `onCallStateChange` with `true` when call indicators appear
- * and `false` when they disappear.
- *
- * Returns a cleanup function to disconnect the observer.
- */
 export function observeCallState(
   onCallStateChange: (active: boolean) => void,
 ): () => void {

@@ -1,59 +1,22 @@
-:root {
-  --popup-bg: #ffffff;
-  --popup-bg-secondary: #f8f9fa;
-  --popup-bg-tertiary: #f1f3f5;
-  --popup-text: #1a1a2e;
-  --popup-text-secondary: #6b7280;
-  --popup-text-tertiary: #9ca3af;
-  --popup-border: #e5e7eb;
-  --popup-accent: #3b82f6;
-  --popup-accent-light: #dbeafe;
-  --popup-success: #10b981;
-  --popup-success-light: #d1fae5;
-  --popup-warning: #f59e0b;
-  --popup-danger: #ef4444;
-}
-
-.dark {
-  --popup-bg: #1e1e2e;
-  --popup-bg-secondary: #262637;
-  --popup-bg-tertiary: #2e2e42;
-  --popup-text: #e4e4ed;
-  --popup-text-secondary: #9ca3af;
-  --popup-text-tertiary: #6b7280;
-  --popup-border: #3a3a4e;
-  --popup-accent: #60a5fa;
-  --popup-accent-light: #1e3a5f;
-  --popup-success: #34d399;
-  --popup-success-light: #0d3b2e;
-  --popup-warning: #fbbf24;
-  --popup-danger: #f87171;
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+@import "../shared/styles/base.css";
 
 body {
   width: 360px;
-  font-family: "Google Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
-  background: var(--popup-bg);
-  color: var(--popup-text);
 }
 
+/* ===== LAYOUT ===== */
 .popup-container {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  background: var(--popup-border);
+  background: var(--ma-border);
 }
 
 .popup-container > * {
-  background: var(--popup-bg);
+  background: var(--ma-bg);
 }
 
+/* ===== HEADER ===== */
 .popup-header {
   display: flex;
   align-items: center;
@@ -93,7 +56,7 @@ body {
   border-radius: 8px;
   cursor: pointer;
   font-size: 18px;
-  color: var(--popup-text-secondary);
+  color: var(--ma-text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -101,11 +64,226 @@ body {
 }
 
 .popup-settings-btn:hover {
-  background: var(--popup-bg-tertiary);
-  color: var(--popup-text);
+  background: var(--ma-bg-tertiary);
+  color: var(--ma-text);
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+/* ===== MEETING STATUS ===== */
+.meeting-status {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.meeting-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.meeting-dot.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.meeting-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.meeting-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ma-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meeting-subtitle {
+  font-size: 12px;
+  color: var(--ma-text-secondary);
+}
+
+/* ===== CAPTURE TOGGLE ===== */
+.capture-section {
+  padding: 12px 16px;
+}
+
+.capture-btn {
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 150ms, transform 100ms;
+  background: var(--ma-accent);
+  color: white;
+}
+
+.capture-btn.active {
+  background: var(--ma-danger);
+}
+
+.capture-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: white;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.capture-hint {
+  font-size: 11px;
+  color: var(--ma-text-tertiary);
+  text-align: center;
+  margin-top: 6px;
+}
+
+/* ===== AGENDA OVERVIEW ===== */
+.agenda-section {
+  padding: 12px 16px;
+}
+
+.agenda-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.agenda-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ma-text-secondary);
+}
+
+.agenda-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ma-text-secondary);
+  padding: 1px 7px;
+  background: var(--ma-bg-tertiary);
+  border-radius: 10px;
+}
+
+.agenda-progress {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  height: 3px;
+}
+
+.agenda-progress-seg {
+  flex: 1;
+  border-radius: 2px;
+  background: var(--ma-border);
+}
+
+.agenda-progress-seg.covered {
+  background: var(--ma-success);
+}
+
+.agenda-progress-seg.active {
+  background: var(--ma-accent);
+}
+
+.agenda-progress-seg.deferred {
+  background: var(--ma-warning);
+}
+
+.agenda-progress-seg.skipped {
+  background: var(--ma-text-tertiary);
+}
+
+.agenda-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.agenda-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.agenda-item.active {
+  background: var(--ma-accent-light);
+}
+
+.agenda-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.agenda-item-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--ma-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agenda-item-title.skipped {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+/* ===== CONSENT ===== */
+.consent-section {
+  padding: 10px 16px 14px;
+}
+
+.consent-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--ma-text-tertiary);
+}
+
+.consent-icon {
+  font-size: 14px;
+}
+
+.consent-chevron {
+  font-size: 10px;
+  transition: transform 150ms;
+}
+
+.consent-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.consent-details {
+  font-size: 11px;
+  color: var(--ma-text-tertiary);
+  margin-top: 6px;
+  line-height: 1.5;
+  padding-left: 20px;
 }
