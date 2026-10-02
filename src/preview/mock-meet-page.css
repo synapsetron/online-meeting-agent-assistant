@@ -1,0 +1,173 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Google Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: #202124;
+  color: #e8eaed;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+.mock-meet {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.mock-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: #2d2e30;
+  border-bottom: 1px solid #3c4043;
+  flex-shrink: 0;
+  height: 56px;
+}
+
+.mock-topbar-title {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.mock-topbar-time {
+  font-family: "Google Sans Mono", monospace;
+  font-size: 14px;
+  color: #9aa0a6;
+}
+
+.mock-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+  padding: 8px;
+}
+
+.mock-tile {
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.mock-tile::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, transparent 30%, rgba(0, 0, 0, 0.3) 100%);
+}
+
+.mock-tile-name {
+  position: relative;
+  z-index: 1;
+  font-size: 18px;
+  font-weight: 500;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+}
+
+.mock-bottombar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 20px;
+  background: #2d2e30;
+  border-top: 1px solid #3c4043;
+  flex-shrink: 0;
+  height: 64px;
+}
+
+.mock-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.mock-controls label {
+  color: #9aa0a6;
+}
+
+.mock-controls select {
+  background: #3c4043;
+  border: 1px solid #5f6368;
+  border-radius: 6px;
+  color: #e8eaed;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.mock-btn {
+  background: #3c4043;
+  border: 1px solid #5f6368;
+  border-radius: 6px;
+  color: #e8eaed;
+  padding: 5px 14px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 150ms;
+}
+
+.mock-btn:hover {
+  background: #4f5356;
+}
+
+.mock-btn.active {
+  background: #8ab4f8;
+  color: #202124;
+  border-color: #8ab4f8;
+}
+
+.mock-theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.mock-theme-toggle input {
+  cursor: pointer;
+}
+
+body.light {
+  background: #f8f9fa;
+  color: #202124;
+}
+
+body.light .mock-topbar,
+body.light .mock-bottombar {
+  background: #ffffff;
+  border-color: #dadce0;
+}
+
+body.light .mock-topbar-time {
+  color: #5f6368;
+}
+
+body.light .mock-controls select,
+body.light .mock-btn {
+  background: #ffffff;
+  border-color: #dadce0;
+  color: #202124;
+}
+
+body.light .mock-btn:hover {
+  background: #f1f3f4;
+}
+
+body.light .mock-tile-name {
+  background: rgba(255, 255, 255, 0.7);
+  color: #202124;
+}
