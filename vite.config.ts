@@ -36,6 +36,7 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, "src/popup/index.html"),
         options: resolve(__dirname, "src/options/index.html"),
+        offscreen: resolve(__dirname, "src/offscreen/offscreen.html"),
         background: resolve(__dirname, "src/background/service-worker.ts"),
         content: resolve(__dirname, "src/content/main.ts"),
       },
@@ -43,6 +44,7 @@ export default defineConfig({
         entryFileNames: (chunk) => {
           if (chunk.name === "background") return "service-worker.js";
           if (chunk.name === "content") return "content.js";
+          if (chunk.name === "offscreen") return "offscreen.js";
           return "assets/[name]-[hash].js";
         },
         chunkFileNames: "assets/[name]-[hash].js",
