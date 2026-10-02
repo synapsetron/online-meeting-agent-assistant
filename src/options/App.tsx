@@ -2,10 +2,32 @@ import { useState, useEffect, useCallback } from "react";
 import { loadSettings, saveSettings, type UserSettings } from "@/shared/storage";
 import "./options.css";
 
+const DEFAULT_BACKEND_URL = "ws://localhost:8000/ws";
+const DEFAULT_SPEECH_LANGUAGE = "uk-UA";
+
+const SPEECH_LANGUAGES = [
+  { value: "uk-UA", label: "Ukrainian (Українська)" },
+  { value: "en-US", label: "English (US)" },
+  { value: "en-GB", label: "English (UK)" },
+  { value: "de-DE", label: "German (Deutsch)" },
+  { value: "fr-FR", label: "French (Français)" },
+  { value: "pl-PL", label: "Polish (Polski)" },
+] as const;
+
+function isExtensionContext(): boolean {
+  return (
+    typeof chrome !== "undefined" &&
+    typeof chrome.storage !== "undefined" &&
+    typeof chrome.storage.local !== "undefined"
+  );
+}
+
 export function App() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [savedVisible, setSavedVisible] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState(false);
+  const [backendUrl, setBackendUrl] = useState(DEFAULT_BACKEND_URL);
+  const [speechLanguage, setSpeechLanguage] = useState(DEFAULT_SPEECH_LANGUAGE);
 
   const [isDark, setIsDark] = useState(
     window.matchMedia("(prefers-color-scheme: dark)").matches,
@@ -13,6 +35,13 @@ export function App() {
 
   useEffect(() => {
     loadSettings().then(setSettings);
+    // Load backend URL and speech language from chrome.storage
+    if (isExtensionContext()) {
+      chrome.storage.local.get(["backendUrl", "speechLanguage"]).then((result) => {
+        if (result.backendUrl) setBackendUrl(result.backendUrl as string);
+        if (result.speechLanguage) setSpeechLanguage(result.speechLanguage as string);
+      });
+    }
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = (e: MediaQueryListEvent) => setIsDark(e.matches);
     mq.addEventListener("change", handler);
@@ -35,6 +64,33 @@ export function App() {
     [settings],
   );
 
+  const showSaved = useCallback(() => {
+    setSavedVisible(true);
+    setTimeout(() => setSavedVisible(false), 2000);
+  }, []);
+
+  const handleBackendUrlChange = useCallback(
+    (url: string) => {
+      setBackendUrl(url);
+      if (isExtensionContext()) {
+        chrome.storage.local.set({ backendUrl: url });
+      }
+      showSaved();
+    },
+    [showSaved],
+  );
+
+  const handleSpeechLanguageChange = useCallback(
+    (lang: string) => {
+      setSpeechLanguage(lang);
+      if (isExtensionContext()) {
+        chrome.storage.local.set({ speechLanguage: lang });
+      }
+      showSaved();
+    },
+    [showSaved],
+  );
+
   if (!settings) return null;
 
   return (
@@ -45,6 +101,50 @@ export function App() {
         <span className={`options-saved ${savedVisible ? "visible" : ""}`}>
           ✓ Saved
         </span>
+      </div>
+
+      {/* Backend Connection */}
+      <div className="options-section">
+        <h2 className="options-section-title">Backend Connection</h2>
+
+        <div className="options-field">
+          <label className="options-label">WebSocket URL</label>
+          <input
+            className="options-input"
+            type="url"
+            placeholder={DEFAULT_BACKEND_URL}
+            value={backendUrl}
+            onChange={(e) => handleBackendUrlChange(e.target.value)}
+          />
+          <p className="options-desc">
+            The WebSocket endpoint of the meeting assistant backend server.
+            Default: {DEFAULT_BACKEND_URL}
+          </p>
+        </div>
+      </div>
+
+      {/* Speech Recognition */}
+      <div className="options-section">
+        <h2 className="options-section-title">Speech Recognition</h2>
+
+        <div className="options-field">
+          <label className="options-label">Recognition language</label>
+          <select
+            className="options-select"
+            value={speechLanguage}
+            onChange={(e) => handleSpeechLanguageChange(e.target.value)}
+          >
+            {SPEECH_LANGUAGES.map((lang) => (
+              <option key={lang.value} value={lang.value}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
+          <p className="options-desc">
+            Language used for speech recognition via the Web Speech API.
+            Choose the language spoken in your meetings.
+          </p>
+        </div>
       </div>
 
       {/* API Keys */}
@@ -87,13 +187,13 @@ export function App() {
         </label>
 
         <p className="options-desc" style={{ marginTop: 8 }}>
-          🛡 Keys are stored locally in browser storage and never transmitted to third parties.
+          Keys are stored locally in browser storage and never transmitted to third parties.
         </p>
       </div>
 
       {/* Language */}
       <div className="options-section">
-        <h2 className="options-section-title">Language</h2>
+        <h2 className="options-section-title">Interface Language</h2>
 
         <div className="options-field">
           <label className="options-label">Primary meeting language</label>
