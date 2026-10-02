@@ -3,7 +3,7 @@
   "name": "Meeting Agent Assistant",
   "version": "0.1.0",
   "description": "AI-powered agenda tracking and intelligent hints for Google Meet",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "tabCapture", "offscreen"],
   "action": {
     "default_popup": "src/popup/index.html",
     "default_icon": {
