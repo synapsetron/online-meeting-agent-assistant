@@ -11,12 +11,18 @@ from pydantic import ValidationError
 
 from server.config import Config
 from server.models import (
+    AgendaUpdateMessage,
     CaptureState,
     ConnectMessage,
     MeetingSummaryMessage,
+    NewHintMessage,
+    NewTranscriptMessage,
     SessionAckMessage,
     StateUpdateMessage,
+    TranscriptErrorMessage,
+    TranscriptSegment,
 )
+from server.core.validation import sanitize_transcript_text
 from server.services.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -67,12 +73,86 @@ async def _periodic_state_sync(
             msg = StateUpdateMessage(
                 meeting=ctx.state.meeting,
                 agenda=ctx.state.agenda,
+                hints=ctx.state.get_active_hints(),
+                recent_transcript=ctx.state.get_window()[-5:],
             )
             await push_to_client(ws, msg)
     except asyncio.CancelledError:
         pass
     except Exception:
         logger.exception("State sync loop failed for session %s", session_id)
+
+
+async def _handle_transcript(
+    ws: WebSocket,
+    data: dict[str, Any],
+    ctx: Any,
+    session_id: str,
+) -> None:
+    segment_data = data.get("segment")
+    if segment_data is None:
+        await push_to_client(
+            ws,
+            TranscriptErrorMessage(error="Missing 'segment' field"),
+        )
+        return
+
+    try:
+        segment = TranscriptSegment.model_validate(segment_data)
+    except ValidationError as exc:
+        await push_to_client(
+            ws,
+            TranscriptErrorMessage(
+                error=f"Invalid segment: {exc}",
+                segment_id=segment_data.get("id") if isinstance(segment_data, dict) else None,
+            ),
+        )
+        return
+
+    segment.text = sanitize_transcript_text(segment.text)
+
+    try:
+        result = await ctx.orchestrator.process_segment(segment, ctx.state)
+    except Exception:
+        logger.exception(
+            "Orchestrator error processing segment %s in session %s",
+            segment.id,
+            session_id,
+        )
+        await push_to_client(
+            ws,
+            TranscriptErrorMessage(
+                error="Internal processing error",
+                segment_id=segment.id,
+            ),
+        )
+        return
+
+    await push_to_client(ws, NewTranscriptMessage(segment=segment))
+
+    if result.agenda_delta and (
+        result.agenda_delta.status_changes
+        or result.agenda_delta.new_active_item_id is not None
+    ):
+        await push_to_client(ws, AgendaUpdateMessage(agenda=ctx.state.agenda))
+
+    for hint in result.hints:
+        ctx.state.add_hint(hint)
+        await push_to_client(ws, NewHintMessage(hint=hint))
+
+    for warning in result.time_warnings:
+        ctx.state.add_hint(warning)
+        await push_to_client(ws, NewHintMessage(hint=warning))
+
+    logger.debug(
+        "Processed segment %s (final=%s) in session %s: "
+        "%d hints, %d time warnings",
+        segment.id,
+        segment.is_final,
+        session_id,
+        len(result.hints),
+        len(result.time_warnings),
+    )
 
 
 @router.websocket("/ws")
@@ -165,6 +245,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                     logger.debug(
                         "Hint %s dismissed in session %s", hint_id, session_id
                     )
+
+                elif msg_type == "TRANSCRIPT":
+                    await _handle_transcript(ws, data, ctx, session_id)
 
                 else:
                     logger.warning(
