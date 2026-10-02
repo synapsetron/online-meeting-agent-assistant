@@ -1,10 +1,5 @@
-/**
- * Speech recognition service wrapping the Web Speech API.
- * Provides continuous speech recognition with automatic restart,
- * producing TranscriptSegment-compatible output.
- */
-
 import type { TranscriptSegment } from "@/types/transcript";
+import { DEFAULT_SPEECH_LANGUAGE } from "./constants";
 
 // ---- Web Speech API TypeScript declarations ----
 // These are not in standard TypeScript lib but are available in Chrome.
@@ -66,7 +61,6 @@ declare global {
 
 export type TranscriptCallback = (segment: TranscriptSegment) => void;
 
-const DEFAULT_LANGUAGE = "uk-UA";
 const DEFAULT_SPEAKER_ID = "local-user";
 const RESTART_DELAY_MS = 300;
 /** Errors that should not trigger an auto-restart */
@@ -84,26 +78,17 @@ export class SpeechRecognitionService {
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(language?: string) {
-    this.language = language ?? DEFAULT_LANGUAGE;
+    this.language = language ?? DEFAULT_SPEECH_LANGUAGE;
   }
 
-  /**
-   * Check whether the Web Speech API is available in this browser.
-   */
   isSupported(): boolean {
     return !!(window.webkitSpeechRecognition || window.SpeechRecognition);
   }
 
-  /**
-   * Set the meeting ID used in emitted TranscriptSegments.
-   */
   setMeetingId(meetingId: string): void {
     this.meetingId = meetingId;
   }
 
-  /**
-   * Set the recognition language (e.g. "uk-UA", "en-US").
-   */
   setLanguage(language: string): void {
     this.language = language;
     // If currently running, restart with the new language
@@ -113,18 +98,11 @@ export class SpeechRecognitionService {
     }
   }
 
-  /**
-   * Register a callback for transcript segments.
-   * Returns an unsubscribe function.
-   */
   onTranscript(callback: TranscriptCallback): () => void {
     this.callbacks.add(callback);
     return () => this.callbacks.delete(callback);
   }
 
-  /**
-   * Start continuous speech recognition.
-   */
   start(): void {
     if (this.isRunning) return;
 
@@ -138,9 +116,6 @@ export class SpeechRecognitionService {
     this.startInternal();
   }
 
-  /**
-   * Stop speech recognition.
-   */
   stop(): void {
     this.shouldRestart = false;
     this.isRunning = false;

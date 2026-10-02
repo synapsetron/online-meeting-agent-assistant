@@ -31,9 +31,6 @@ export type BackgroundToPopup = {
   recentTranscript: TranscriptSegment[];
 };
 
-/**
- * Messages sent from the extension to the backend WebSocket server.
- */
 export type ClientToServer =
   | { type: "CONNECT"; meeting_id: string; title: string; agenda_items: { id: string; title: string; description?: string; estimated_minutes?: number }[]; participants: string[] }
   | { type: "TRANSCRIPT"; segment: TranscriptSegment }
@@ -41,9 +38,6 @@ export type ClientToServer =
   | { type: "AUDIO_STOP" }
   | { type: "DISMISS_HINT"; hint_id: string };
 
-/**
- * Messages received from the backend WebSocket server.
- */
 export type ServerToClient =
   | { type: "SESSION_ACK"; session_id: string }
   | { type: "NEW_TRANSCRIPT"; segment: TranscriptSegment }

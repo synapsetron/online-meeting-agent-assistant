@@ -1,14 +1,3 @@
-/**
- * Offscreen document for processing tab audio captured via chrome.tabCapture.
- *
- * In Manifest V3, service workers cannot access DOM or media APIs directly.
- * This offscreen document receives a stream ID from the service worker,
- * creates a MediaStream from it, and processes the audio.
- *
- * Currently logs that audio is being captured. Actual ASR integration
- * (feeding audio to a recognition engine) will be added in a later phase.
- */
-
 import type {
   ServiceWorkerToOffscreen,
   OffscreenToServiceWorker,
@@ -19,10 +8,6 @@ let mediaStream: MediaStream | null = null;
 let sourceNode: MediaStreamAudioSourceNode | null = null;
 let analyserNode: AnalyserNode | null = null;
 
-/**
- * Start capturing audio from the given stream ID.
- * The stream ID comes from chrome.tabCapture.getMediaStreamId() in the service worker.
- */
 async function startCapture(streamId: string): Promise<void> {
   try {
     // Clean up any existing capture
@@ -60,9 +45,6 @@ async function startCapture(streamId: string): Promise<void> {
   }
 }
 
-/**
- * Stop capturing and release all audio resources.
- */
 function stopCapture(): void {
   if (sourceNode) {
     sourceNode.disconnect();
@@ -91,18 +73,12 @@ function stopCapture(): void {
   console.log("[Offscreen] Tab audio capture stopped");
 }
 
-/**
- * Send a message to the service worker.
- */
 function sendMessage(message: OffscreenToServiceWorker): void {
   chrome.runtime.sendMessage(message).catch((error) => {
     console.warn("[Offscreen] Failed to send message:", error);
   });
 }
 
-/**
- * Listen for messages from the service worker.
- */
 chrome.runtime.onMessage.addListener(
   (message: ServiceWorkerToOffscreen, _sender, sendResponse) => {
     switch (message.type) {
