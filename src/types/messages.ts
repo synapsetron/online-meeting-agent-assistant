@@ -53,3 +53,12 @@ export type ServerToClient =
   | { type: "CAPTURE_STATE"; captureState: CaptureState }
   | { type: "MEETING_SUMMARY"; summary: string; covered_items: string[]; missed_items: string[] }
   | { type: "ERROR"; message: string };
+
+export type ServiceWorkerToOffscreen =
+  | { type: "START_TAB_CAPTURE"; streamId: string }
+  | { type: "STOP_TAB_CAPTURE" };
+
+export type OffscreenToServiceWorker =
+  | { type: "TAB_CAPTURE_STARTED" }
+  | { type: "TAB_CAPTURE_STOPPED" }
+  | { type: "TAB_CAPTURE_ERROR"; error: string };
