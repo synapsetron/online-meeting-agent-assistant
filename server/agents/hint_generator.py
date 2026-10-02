@@ -6,6 +6,7 @@ import time
 import uuid
 from typing import Any
 
+from server.core.circuit_breaker import CircuitBreaker
 from server.models import AgendaState, Hint, HintType, TranscriptSegment
 
 try:
@@ -14,6 +15,19 @@ except ImportError:
     anthropic = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
+
+_SUMMARY_SYSTEM_PROMPT = """\
+You are a meeting summarizer. Given the current rolling summary of the meeting \
+so far and a list of new transcript segments, produce an updated concise summary \
+(200-300 words) of what has been discussed.
+
+Rules:
+- Merge new information into the existing summary rather than appending.
+- Preserve key decisions, action items, and important points.
+- Drop redundant or trivial details.
+- Write in clear, factual prose.
+- Return only the summary text, no JSON or other formatting.
+"""
 
 _SYSTEM_PROMPT = """\
 You are a meeting agenda monitoring assistant. Your job is to analyze the \
@@ -128,6 +142,11 @@ class HintGenerator:
     def __init__(self, api_key: str, model: str, timeout: float = 10.0) -> None:
         self._model = model
         self._timeout = timeout
+        self._circuit_breaker = CircuitBreaker(
+            failure_threshold=3,
+            recovery_timeout=60.0,
+            name="hint-generator",
+        )
         if anthropic is None:
             self._client: Any = None
         else:
@@ -141,6 +160,10 @@ class HintGenerator:
     ) -> list[Hint]:
         if self._client is None:
             logger.warning("anthropic package not installed; skipping hint generation")
+            return []
+
+        if not self._circuit_breaker.allow_request():
+            logger.info("Circuit breaker open; skipping LLM hint generation")
             return []
 
         valid_item_ids = {item.id for item in agenda.items}
@@ -158,7 +181,10 @@ class HintGenerator:
             )
         except Exception:
             logger.exception("LLM hint generation failed")
+            self._circuit_breaker.record_failure()
             return []
+
+        self._circuit_breaker.record_success()
 
         raw_text = ""
         for block in response.content:
@@ -166,3 +192,47 @@ class HintGenerator:
                 raw_text += block.text
 
         return _parse_hints(raw_text, valid_item_ids, valid_segment_ids)
+
+    async def summarize_segments(
+        self,
+        current_summary: str,
+        new_segments: list[TranscriptSegment],
+    ) -> str:
+        """Generate an updated rolling summary by merging *new_segments* into
+        the *current_summary*.  Returns the updated summary string.
+        """
+        if self._client is None:
+            logger.warning(
+                "anthropic package not installed; skipping summary generation"
+            )
+            return current_summary
+
+        segment_lines = [
+            f"[{seg.id}] ({seg.speaker_id}): {seg.text}" for seg in new_segments
+        ]
+        transcript_block = "\n".join(segment_lines)
+
+        user_content = (
+            f"Current rolling summary:\n{current_summary or '(none yet)'}\n\n"
+            f"New transcript segments:\n<transcript>\n{transcript_block}\n</transcript>\n\n"
+            f"Produce the updated summary."
+        )
+
+        try:
+            response = await self._client.messages.create(
+                model=self._model,
+                max_tokens=1024,
+                system=_SUMMARY_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": user_content}],
+                timeout=15.0,
+            )
+        except Exception:
+            logger.exception("LLM summary generation failed")
+            return current_summary
+
+        raw_text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                raw_text += block.text
+
+        return raw_text.strip() or current_summary
