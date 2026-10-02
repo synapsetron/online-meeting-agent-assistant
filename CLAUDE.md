@@ -74,6 +74,24 @@ Read the assignment and inspect the repository before selecting a stack. Then pr
 - Prefer an explainable agenda-monitoring baseline before more complex semantic models: preserve transcript evidence and agenda-item identifiers, represent uncertainty, and never mark an item complete solely because it was not mentioned.
 - Measure latency end to end, from captured audio/transcript event to a visible hint. Keep stale-result handling, timeouts, backpressure, and a no-network/no-provider fallback in the design.
 
+## Backend multi-agent architecture
+
+The backend uses Python + FastAPI + asyncio with a master-orchestrator / sub-agent pattern. The Chrome extension service worker connects via WebSocket.
+
+### Agent roles and coordination
+- **Master orchestrator**: single entry point for transcript events. Coalesces partials, routes to sub-agents, merges proposals sequentially, validates, pushes updates to frontend. Sub-agents return typed deltas, never mutate state directly.
+- **Transcript analyzer** (deterministic): keyword/rule-based topic extraction, agenda-item mapping. Runs on every final segment without LLM.
+- **Agenda tracker** (deterministic): state machine for item lifecycle (pending/active/covered/deferred/skipped) with evidence citation.
+- **Hint generator** (LLM-backed): uses Anthropic Messages API with bounded context and structured output. Debounced, max one in-flight request per session.
+
+### Context isolation rules
+1. Sliding window: last ~20 final segments + rolling summary to hint generator; never the full transcript.
+2. Dual-path: partial segments go directly to UI; only final segments enter the orchestrator pipeline.
+3. Single-flight LLM with 2–3 second debounce batching. Deterministic agents run without delay.
+4. Session-scoped state: each WebSocket creates an isolated SessionContext (own state store, agents, buffer).
+5. Transcript passed as user content in XML-delimited block; schema validation in ordinary code rejects unknown fields and IDs.
+6. Circuit breaker per service: ASR down → time-based hints only; LLM down → deterministic hints only; WebSocket → reconnect with backoff.
+
 ## Privacy and credentials
 
 - Make capture explicit and visible, obtain appropriate participant/user consent, request only necessary browser permissions, and provide an obvious stop control.

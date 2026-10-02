@@ -1,0 +1,13 @@
+{
+  "agenda_items": [
+    {"id": "ag-1", "title": "Project overview", "order": 1, "estimated_minutes": 5},
+    {"id": "ag-2", "title": "Architecture review", "order": 2, "estimated_minutes": 10},
+    {"id": "ag-3", "title": "Timeline", "order": 3, "estimated_minutes": 5}
+  ],
+  "segments": [
+    {"id": "seg-1", "text": "Let's start with the project overview", "speaker_id": "s1", "timestamp": 0},
+    {"id": "seg-2", "text": "The main goal is to build a meeting assistant", "speaker_id": "s1", "timestamp": 5000},
+    {"id": "seg-3", "text": "Let's move on to the architecture review", "speaker_id": "s1", "timestamp": 30000},
+    {"id": "seg-4", "text": "The system has three main layers", "speaker_id": "s2", "timestamp": 35000}
+  ]
+}
