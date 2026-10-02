@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Meeting Assistant – Preview</title>
+  <link rel="stylesheet" href="./mock-meet-page.css" />
+</head>
+<body>
+  <div class="mock-meet">
+    <div class="mock-topbar">
+      <span class="mock-topbar-title">Mock Google Meet</span>
+      <span class="mock-topbar-time" id="mockTime">00:00</span>
+    </div>
+    <div class="mock-grid">
+      <div class="mock-tile" style="background: #1e3a5f">
+        <span class="mock-tile-name">Olena K.</span>
+      </div>
+      <div class="mock-tile" style="background: #1a3b2e">
+        <span class="mock-tile-name">Dmytro S.</span>
+      </div>
+      <div class="mock-tile" style="background: #3b2e0a">
+        <span class="mock-tile-name">Prof. Ivanov</span>
+      </div>
+      <div class="mock-tile" style="background: #2e1a3b">
+        <span class="mock-tile-name">You</span>
+      </div>
+    </div>
+    <div class="mock-bottombar">
+      <div class="mock-controls">
+        <label for="scenarioSelect">Scenario:</label>
+        <select id="scenarioSelect">
+          <option value="normalFlow">Normal flow</option>
+          <option value="topicDrift">Topic drift</option>
+          <option value="deferredItems">Deferred items</option>
+          <option value="quickMeeting">Quick meeting</option>
+        </select>
+        <button id="playPauseBtn" class="mock-btn">▶ Play</button>
+        <button id="resetBtn" class="mock-btn">↺ Reset</button>
+        <label for="speedSelect">Speed:</label>
+        <select id="speedSelect">
+          <option value="1">1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+          <option value="8">8×</option>
+        </select>
+        <label class="mock-theme-toggle">
+          <input type="checkbox" id="darkToggle" checked />
+          Dark mode
+        </label>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
