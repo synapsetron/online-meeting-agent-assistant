@@ -35,8 +35,19 @@ class DismissHintMessage(BaseModel):
     hint_id: str
 
 
+class TranscriptMessage(BaseModel):
+    type: Literal["TRANSCRIPT"] = "TRANSCRIPT"
+    segment: TranscriptSegment
+
+
 ClientMessage = Annotated[
-    Union[ConnectMessage, AudioStartMessage, AudioStopMessage, DismissHintMessage],
+    Union[
+        ConnectMessage,
+        AudioStartMessage,
+        AudioStopMessage,
+        DismissHintMessage,
+        TranscriptMessage,
+    ],
     Field(discriminator="type"),
 ]
 
@@ -67,6 +78,8 @@ class StateUpdateMessage(BaseModel):
     type: Literal["STATE_UPDATE"] = "STATE_UPDATE"
     meeting: MeetingInfo
     agenda: AgendaState
+    hints: list[Hint] = []
+    recent_transcript: list[TranscriptSegment] = []
 
 
 class CaptureStateMessage(BaseModel):
@@ -81,6 +94,12 @@ class MeetingSummaryMessage(BaseModel):
     missed_items: list[str]
 
 
+class TranscriptErrorMessage(BaseModel):
+    type: Literal["TRANSCRIPT_ERROR"] = "TRANSCRIPT_ERROR"
+    error: str
+    segment_id: str | None = None
+
+
 ServerMessage = Annotated[
     Union[
         SessionAckMessage,
@@ -90,6 +109,7 @@ ServerMessage = Annotated[
         StateUpdateMessage,
         CaptureStateMessage,
         MeetingSummaryMessage,
+        TranscriptErrorMessage,
     ],
     Field(discriminator="type"),
 ]
