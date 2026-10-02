@@ -26,3 +26,12 @@ export type BackgroundToPopup = {
   hints: Hint[];
   recentTranscript: TranscriptSegment[];
 };
+
+export type ServiceWorkerToOffscreen =
+  | { type: "START_TAB_CAPTURE"; streamId: string }
+  | { type: "STOP_TAB_CAPTURE" };
+
+export type OffscreenToServiceWorker =
+  | { type: "TAB_CAPTURE_STARTED" }
+  | { type: "TAB_CAPTURE_STOPPED" }
+  | { type: "TAB_CAPTURE_ERROR"; error: string };
