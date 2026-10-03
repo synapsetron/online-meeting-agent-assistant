@@ -2,6 +2,7 @@ import { AgendaItemStatus, type AgendaItem } from "@/types/agenda";
 
 interface Props {
   items: AgendaItem[];
+  onEdit?: () => void;
 }
 
 const STATUS_STYLES: Record<
@@ -23,14 +24,21 @@ function progressClass(status: AgendaItemStatus): string {
   return "agenda-progress-seg";
 }
 
-export function AgendaOverview({ items }: Props) {
+export function AgendaOverview({ items, onEdit }: Props) {
   const covered = items.filter((i) => i.status === AgendaItemStatus.Covered).length;
 
   return (
     <div className="agenda-section">
       <div className="agenda-header">
         <span className="agenda-label">Agenda</span>
-        <span className="agenda-badge">{covered}/{items.length}</span>
+        <div className="agenda-header-right">
+          {onEdit && (
+            <button className="agenda-edit-btn" onClick={onEdit} title="Edit agenda">
+              Edit
+            </button>
+          )}
+          <span className="agenda-badge">{covered}/{items.length}</span>
+        </div>
       </div>
 
       <div className="agenda-progress">
