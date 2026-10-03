@@ -1,6 +1,7 @@
 import type { AgendaState } from "@/types/agenda";
 import { AgendaItemStatus } from "@/types/agenda";
 import { el, formatTime } from "../utils/dom";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 const STATUS_ICONS: Record<AgendaItemStatus, string> = {
   [AgendaItemStatus.Pending]: "",
@@ -12,60 +13,24 @@ const STATUS_ICONS: Record<AgendaItemStatus, string> = {
 
 export class AgendaTracker {
   readonly root: HTMLElement;
-  private section: HTMLElement;
-  private sectionContent: HTMLElement;
+  private section: CollapsibleSection;
   private progressBar: HTMLElement;
   private list: HTMLElement;
-  private badge: HTMLElement;
-  private chevron: HTMLElement;
-  private isOpen = true;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
   private activeTimeEl: HTMLElement | null = null;
   private activeStartTime = 0;
   private activeElapsed = 0;
 
   constructor() {
-    this.chevron = el("span", { className: "ma-section-chevron open", textContent: "▸" });
-    this.badge = el("span", { className: "ma-section-badge", textContent: "0/0" });
-
-    const header = el("div", {
-      className: "ma-section-header",
-      role: "button",
-      tabindex: "0",
-      "aria-expanded": "true",
-      "aria-label": "Agenda section",
-    }, [
-      this.chevron,
-      el("span", { className: "ma-section-title", textContent: "Agenda" }),
-      this.badge,
-    ]);
-
-    header.addEventListener("click", () => this.toggle());
-    header.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        this.toggle();
-      }
-    });
+    this.section = new CollapsibleSection("Agenda", "Agenda section");
 
     this.progressBar = el("div", { className: "ma-progress-bar" });
     this.list = el("ul", { className: "ma-agenda-list" });
 
-    this.sectionContent = el("div", { className: "ma-section-content" }, [
-      this.progressBar,
-      this.list,
-    ]);
+    this.section.content.appendChild(this.progressBar);
+    this.section.content.appendChild(this.list);
 
-    this.section = el("div", { className: "ma-section" }, [header, this.sectionContent]);
-    this.root = this.section;
-  }
-
-  private toggle() {
-    this.isOpen = !this.isOpen;
-    this.chevron.className = `ma-section-chevron${this.isOpen ? " open" : ""}`;
-    this.sectionContent.className = `ma-section-content${this.isOpen ? "" : " closed"}`;
-    const header = this.section.querySelector(".ma-section-header");
-    header?.setAttribute("aria-expanded", String(this.isOpen));
+    this.root = this.section.root;
   }
 
   update(state: AgendaState) {
@@ -77,7 +42,7 @@ export class AgendaTracker {
     const covered = state.items.filter(
       (i) => i.status === AgendaItemStatus.Covered,
     ).length;
-    this.badge.textContent = `${covered}/${state.items.length}`;
+    this.section.setBadge(`${covered}/${state.items.length}`);
 
     this.progressBar.innerHTML = "";
     for (const item of state.items) {

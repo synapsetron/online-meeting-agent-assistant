@@ -13,6 +13,14 @@ let overlay: OverlayContainer | null = null;
 let theme: ThemeManager | null = null;
 let speechService: SpeechRecognitionService | null = null;
 
+function sendToBackground(msg: ContentToBackground | PopupToBackground): void {
+  try {
+    chrome.runtime.sendMessage(msg).catch(() => {});
+  } catch {
+    // Extension context invalidated after update — ignore
+  }
+}
+
 function startRecognition(language?: string) {
   if (speechService) {
     speechService.stop();
@@ -33,11 +41,9 @@ function startRecognition(language?: string) {
   }).catch(() => {});
 
   speechService.onTranscript((segment) => {
+    console.log("[Meeting Assistant] Transcript segment:", segment.text.substring(0, 50), "overlay:", !!overlay);
     overlay?.addTranscript(segment);
-    const msg: ContentToBackground = { type: "TRANSCRIPT_SEGMENT", segment };
-    chrome.runtime.sendMessage(msg).catch((err) => {
-      console.error("[Meeting Assistant] Failed to send transcript:", err);
-    });
+    sendToBackground({ type: "TRANSCRIPT_SEGMENT", segment });
   });
 
   speechService.start();
@@ -61,19 +67,15 @@ function initOverlay() {
 
   overlay = new OverlayContainer({
     onDismissHint: (hintId) => {
-      console.log("[Meeting Assistant] Hint dismissed:", hintId);
-      const msg: ContentToBackground = { type: "DISMISS_HINT", hintId };
-      chrome.runtime.sendMessage(msg).catch((err) => {
-        console.error("[Meeting Assistant] Failed to send DISMISS_HINT:", err);
-      });
+      sendToBackground({ type: "DISMISS_HINT", hintId });
     },
     onStopCapture: () => {
       stopRecognition();
       overlay?.setCaptureState(CaptureState.Stopped);
-      const msg: ContentToBackground = { type: "STOP_RECOGNITION" };
-      chrome.runtime.sendMessage(msg).catch((err) => {
-        console.error("[Meeting Assistant] Failed to send STOP_RECOGNITION:", err);
-      });
+      sendToBackground({ type: "TOGGLE_CAPTURE" } as PopupToBackground);
+    },
+    onStartCapture: () => {
+      sendToBackground({ type: "TOGGLE_CAPTURE" } as PopupToBackground);
     },
   });
 
@@ -82,7 +84,6 @@ function initOverlay() {
   theme = new ThemeManager(host.host);
   theme.init();
 
-  // Listen for messages from service worker
   chrome.runtime.onMessage.addListener(
     (message: BackgroundToContent, _sender, sendResponse) => {
       switch (message.type) {
@@ -103,6 +104,7 @@ function initOverlay() {
           break;
 
         case "NEW_TRANSCRIPT":
+          console.log("[Meeting Assistant] NEW_TRANSCRIPT from backend:", message.segment.text?.substring(0, 50));
           overlay?.addTranscript(message.segment);
           break;
 
@@ -139,10 +141,7 @@ function initOverlay() {
     },
   );
 
-  // Notify service worker that content script is ready
-  const readyMsg: ContentToBackground = { type: "CONTENT_READY" };
-  chrome.runtime.sendMessage(readyMsg).catch(() => {});
-
+  sendToBackground({ type: "CONTENT_READY" });
   console.log("[Meeting Assistant] Overlay initialized for meeting");
 }
 

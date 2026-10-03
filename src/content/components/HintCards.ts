@@ -3,6 +3,7 @@ import { HintType } from "@/types/hint";
 import type { AgendaItem } from "@/types/agenda";
 import { el } from "../utils/dom";
 import { MAX_VISIBLE_HINTS } from "@/shared/constants";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 const TYPE_ICONS: Record<HintType, string> = {
   [HintType.AgendaSuggestion]: "💡",
@@ -30,12 +31,8 @@ const TYPE_CSS: Record<HintType, string> = {
 
 export class HintCards {
   readonly root: HTMLElement;
-  private section: HTMLElement;
-  private sectionContent: HTMLElement;
+  private section: CollapsibleSection;
   private list: HTMLElement;
-  private badge: HTMLElement;
-  private chevron: HTMLElement;
-  private isOpen = true;
   private hints: Hint[] = [];
   private agendaItems: Map<string, AgendaItem> = new Map();
   private onDismiss: ((hintId: string) => void) | null = null;
@@ -43,41 +40,13 @@ export class HintCards {
   constructor(onDismiss?: (hintId: string) => void) {
     this.onDismiss = onDismiss ?? null;
 
-    this.chevron = el("span", { className: "ma-section-chevron open", textContent: "▸" });
-    this.badge = el("span", { className: "ma-section-badge", textContent: "0" });
-
-    const header = el("div", {
-      className: "ma-section-header",
-      role: "button",
-      tabindex: "0",
-      "aria-expanded": "true",
-      "aria-label": "Suggestions section",
-    }, [
-      this.chevron,
-      el("span", { className: "ma-section-title", textContent: "Suggestions" }),
-      this.badge,
-    ]);
-
-    header.addEventListener("click", () => this.toggle());
-    header.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        this.toggle();
-      }
-    });
+    this.section = new CollapsibleSection("Suggestions", "Suggestions section");
 
     this.list = el("div", { className: "ma-hints-list" });
     this.list.innerHTML = `<div class="ma-hints-empty">No suggestions yet</div>`;
 
-    this.sectionContent = el("div", { className: "ma-section-content" }, [this.list]);
-    this.section = el("div", { className: "ma-section" }, [header, this.sectionContent]);
-    this.root = this.section;
-  }
-
-  private toggle() {
-    this.isOpen = !this.isOpen;
-    this.chevron.className = `ma-section-chevron${this.isOpen ? " open" : ""}`;
-    this.sectionContent.className = `ma-section-content${this.isOpen ? "" : " closed"}`;
+    this.section.content.appendChild(this.list);
+    this.root = this.section.root;
   }
 
   setAgendaItems(items: AgendaItem[]) {
@@ -126,7 +95,7 @@ export class HintCards {
 
   private updateBadge() {
     const count = this.hints.filter((h) => !h.dismissed).length;
-    this.badge.textContent = String(count);
+    this.section.setBadge(String(count));
   }
 
   private createHintCard(hint: Hint): HTMLElement {
