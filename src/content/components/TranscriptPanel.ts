@@ -1,50 +1,29 @@
 import type { TranscriptSegment, Speaker } from "@/types/transcript";
 import { el, formatTimestamp } from "../utils/dom";
 import { MAX_VISIBLE_SEGMENTS } from "@/shared/constants";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 export class TranscriptPanel {
   readonly root: HTMLElement;
-  private section: HTMLElement;
-  private sectionContent: HTMLElement;
+  private section: CollapsibleSection;
   private list: HTMLElement;
-  private badge: HTMLElement;
-  private chevron: HTMLElement;
-  private isOpen = true;
   private isCapturing = false;
   private segments: TranscriptSegment[] = [];
   private speakers: Map<string, Speaker> = new Map();
   private userScrolled = false;
 
   constructor() {
-    this.chevron = el("span", { className: "ma-section-chevron open", textContent: "▸" });
-    this.badge = el("span", { className: "ma-section-badge", textContent: "0" });
-
     const liveIndicator = el("span", {
       className: "ma-transcript-live-dot",
       "aria-label": "Live",
     });
     liveIndicator.style.display = "none";
 
-    const headerContent = el("span", { className: "ma-section-title" }, [
-      document.createTextNode("Transcript"),
-      liveIndicator,
-    ]);
-
-    const header = el("div", {
-      className: "ma-section-header",
-      role: "button",
-      tabindex: "0",
-      "aria-expanded": "true",
-      "aria-label": "Transcript section",
-    }, [this.chevron, headerContent, this.badge]);
-
-    header.addEventListener("click", () => this.toggle());
-    header.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        this.toggle();
-      }
-    });
+    this.section = new CollapsibleSection(
+      "Transcript",
+      "Transcript section",
+      [liveIndicator],
+    );
 
     this.list = el("div", { className: "ma-transcript-list" });
     this.list.innerHTML = `<div class="ma-transcript-empty">Waiting for transcript...</div>`;
@@ -54,15 +33,8 @@ export class TranscriptPanel {
       this.userScrolled = scrollHeight - scrollTop - clientHeight > 30;
     });
 
-    this.sectionContent = el("div", { className: "ma-section-content" }, [this.list]);
-    this.section = el("div", { className: "ma-section" }, [header, this.sectionContent]);
-    this.root = this.section;
-  }
-
-  private toggle() {
-    this.isOpen = !this.isOpen;
-    this.chevron.className = `ma-section-chevron${this.isOpen ? " open" : ""}`;
-    this.sectionContent.className = `ma-section-content${this.isOpen ? "" : " closed"}`;
+    this.section.content.appendChild(this.list);
+    this.root = this.section.root;
   }
 
   setSpeakers(speakers: Speaker[]) {
@@ -81,10 +53,8 @@ export class TranscriptPanel {
   addSegment(segment: TranscriptSegment) {
     const existing = this.segments.findIndex((s) => s.id === segment.id);
     if (existing >= 0) {
-      if (segment.version > this.segments[existing].version) {
-        this.segments[existing] = segment;
-        this.updateSegmentElement(segment);
-      }
+      this.segments[existing] = segment;
+      this.updateSegmentElement(segment);
       return;
     }
 
@@ -105,7 +75,7 @@ export class TranscriptPanel {
     const segEl = this.createSegmentElement(segment);
     this.list.appendChild(segEl);
 
-    this.badge.textContent = String(this.segments.length);
+    this.section.setBadge(String(this.segments.length));
 
     if (!this.userScrolled) {
       this.list.scrollTop = this.list.scrollHeight;
@@ -114,9 +84,10 @@ export class TranscriptPanel {
 
   private createSegmentElement(segment: TranscriptSegment): HTMLElement {
     const speaker = this.speakers.get(segment.speakerId);
+    const displayName = speaker?.name ?? (segment.speakerId === "local-user" ? "You" : "Unknown");
     const speakerName = el("span", {
       className: "ma-transcript-speaker",
-      textContent: speaker?.name ?? "Unknown",
+      textContent: displayName,
     });
     if (speaker) speakerName.style.color = speaker.color;
 
@@ -144,12 +115,12 @@ export class TranscriptPanel {
   }
 
   private updateSegmentElement(segment: TranscriptSegment) {
-    const el = this.list.querySelector(
+    const segEl = this.list.querySelector(
       `[data-segment-id="${segment.id}"]`,
     ) as HTMLElement | null;
-    if (!el) return;
+    if (!segEl) return;
 
-    const textEl = el.querySelector(".ma-transcript-text");
+    const textEl = segEl.querySelector(".ma-transcript-text");
     if (textEl) {
       textEl.textContent = segment.text;
       textEl.className = `ma-transcript-text${segment.isFinal ? "" : " partial"}`;

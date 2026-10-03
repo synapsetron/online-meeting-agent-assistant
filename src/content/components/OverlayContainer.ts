@@ -10,6 +10,7 @@ import { AgendaTracker } from "./AgendaTracker";
 import { TranscriptPanel } from "./TranscriptPanel";
 import { HintCards } from "./HintCards";
 import { CaptureStatusBar } from "./CaptureStatusBar";
+import { OverlaySettings } from "./OverlaySettings";
 
 export class OverlayContainer {
   readonly root: HTMLElement;
@@ -19,6 +20,8 @@ export class OverlayContainer {
   private transcriptPanel: TranscriptPanel;
   private hintCards: HintCards;
   private captureStatusBar: CaptureStatusBar;
+  private overlaySettings: OverlaySettings;
+  private bodyEl!: HTMLElement;
   private isMinimized = false;
   private cleanups: (() => void)[] = [];
   private onDismissHint: ((hintId: string) => void) | null = null;
@@ -27,17 +30,33 @@ export class OverlayContainer {
   constructor(options?: {
     onDismissHint?: (hintId: string) => void;
     onStopCapture?: () => void;
+    onStartCapture?: () => void;
   }) {
     this.onDismissHint = options?.onDismissHint ?? null;
     this.onStopCapture = options?.onStopCapture ?? null;
 
-    this.captureStatusBar = new CaptureStatusBar(() => this.onStopCapture?.());
+    this.captureStatusBar = new CaptureStatusBar(
+      () => this.onStopCapture?.(),
+      () => options?.onStartCapture?.(),
+    );
     this.agendaTracker = new AgendaTracker();
     this.transcriptPanel = new TranscriptPanel();
     this.hintCards = new HintCards((id) => this.onDismissHint?.(id));
+    this.overlaySettings = new OverlaySettings(() => {
+      this.bodyEl.style.display = "";
+      this.overlaySettings.root.style.display = "none";
+    });
 
     const titlebarIcon = el("div", { className: "ma-titlebar-icon", textContent: "M" });
     const titlebarText = el("span", { className: "ma-titlebar-text", textContent: "Meeting Assistant" });
+
+    const settingsBtn = el("button", {
+      className: "ma-btn-icon ma-btn-settings",
+      "aria-label": "Settings",
+      textContent: "⚙",
+    });
+    settingsBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+    settingsBtn.addEventListener("click", () => this.toggleSettings());
 
     const minimizeBtn = el("button", {
       className: "ma-btn-icon",
@@ -53,10 +72,10 @@ export class OverlayContainer {
     });
     closeBtn.addEventListener("click", () => this.close());
 
-    const actions = el("div", { className: "ma-titlebar-actions" }, [minimizeBtn, closeBtn]);
+    const actions = el("div", { className: "ma-titlebar-actions" }, [settingsBtn, minimizeBtn, closeBtn]);
     const titlebar = el("div", { className: "ma-titlebar" }, [titlebarIcon, titlebarText, actions]);
 
-    const body = el("div", { className: "ma-body" }, [
+    this.bodyEl = el("div", { className: "ma-body" }, [
       this.agendaTracker.root,
       this.transcriptPanel.root,
       this.hintCards.root,
@@ -69,7 +88,7 @@ export class OverlayContainer {
       className: "ma-overlay",
       role: "complementary",
       "aria-label": "Meeting Assistant",
-    }, [resizeLeft, resizeBottom, titlebar, this.captureStatusBar.root, body]);
+    }, [resizeLeft, resizeBottom, titlebar, this.captureStatusBar.root, this.bodyEl, this.overlaySettings.root]);
 
     this.cleanups.push(
       makeDraggable(
@@ -115,6 +134,15 @@ export class OverlayContainer {
     this.pill.style.display = "none";
   }
 
+  private toggleSettings() {
+    if (this.overlaySettings.isVisible) {
+      this.overlaySettings.hide();
+    } else {
+      this.bodyEl.style.display = "none";
+      this.overlaySettings.show();
+    }
+  }
+
   private close() {
     this.root.style.display = "none";
   }
@@ -158,5 +186,6 @@ export class OverlayContainer {
     this.transcriptPanel.destroy();
     this.hintCards.destroy();
     this.captureStatusBar.destroy();
+    this.overlaySettings.destroy();
   }
 }

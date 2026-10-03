@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel
+from .base import CamelModel
 
 
 class MeetingStatus(str, Enum):
@@ -19,7 +19,7 @@ class CaptureState(str, Enum):
     STOPPED = "stopped"
 
 
-class MeetingInfo(BaseModel):
+class MeetingInfo(CamelModel):
     id: str
     title: str
     start_time: float

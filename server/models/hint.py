@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel
+from .base import CamelModel
 
 
 class HintType(str, Enum):
@@ -13,7 +13,7 @@ class HintType(str, Enum):
     SUMMARY = "summary"
 
 
-class Hint(BaseModel):
+class Hint(CamelModel):
     id: str
     type: HintType
     agenda_item_id: str

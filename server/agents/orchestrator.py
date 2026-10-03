@@ -37,12 +37,12 @@ _SUMMARY_INTERVAL = 10  # generate a rolling summary every N final segments
 
 
 class Orchestrator:
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, api_key_override: str | None = None) -> None:
         self._config = config
         self._analyzer = TranscriptAnalyzer()
         self._tracker = AgendaTracker()
         self._hint_gen = HintGenerator(
-            api_key=config.anthropic_api_key,
+            api_key=api_key_override or config.anthropic_api_key,
             model=config.anthropic_model,
             timeout=config.llm_timeout_seconds,
         )

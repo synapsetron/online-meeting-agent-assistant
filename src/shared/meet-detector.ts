@@ -24,13 +24,15 @@ export function isMeetCallActive(): boolean {
   const endCallButton = document.querySelector(
     '[aria-label*="Leave" i], [aria-label*="leave" i], ' +
     '[aria-label*="Залишити" i], [aria-label*="залишити" i], ' +
+    '[aria-label*="Покинуть" i], [aria-label*="покинуть" i], ' +
     '[data-tooltip*="Leave" i], [data-tooltip*="leave" i]'
   );
 
   // Check for mute/camera control buttons
   const controlButtons = document.querySelector(
     '[aria-label*="microphone" i], [aria-label*="camera" i], ' +
-    '[aria-label*="мікрофон" i], [aria-label*="камер" i]'
+    '[aria-label*="мікрофон" i], [aria-label*="камер" i], ' +
+    '[aria-label*="Микрофон" i], [aria-label*="микрофон" i]'
   );
 
   // If we find both end-call and control buttons, call is active

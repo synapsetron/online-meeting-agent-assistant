@@ -25,14 +25,6 @@ export class ShadowHost {
     this.shadow.appendChild(element);
   }
 
-  setDarkMode(dark: boolean) {
-    if (dark) {
-      this.host.classList.add("dark");
-    } else {
-      this.host.classList.remove("dark");
-    }
-  }
-
   destroy() {
     this.host.remove();
   }

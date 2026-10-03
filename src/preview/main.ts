@@ -36,6 +36,7 @@ function mountOverlay() {
   overlay = new OverlayContainer({
     onDismissHint: (id) => console.log("Dismissed hint:", id),
     onStopCapture: () => stopPlayback(),
+    onStartCapture: () => startPlayback(),
   });
   host.mount(overlay.root);
 
@@ -98,7 +99,11 @@ function applyTheme() {
   const isDark = darkToggle.checked;
   document.body.classList.toggle("light", !isDark);
   if (host) {
-    host.setDarkMode(isDark);
+    if (isDark) {
+      host.host.classList.add("dark");
+    } else {
+      host.host.classList.remove("dark");
+    }
   }
 }
 
