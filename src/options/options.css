@@ -174,3 +174,32 @@ body {
 .options-saved.visible {
   opacity: 1;
 }
+
+.options-api-key-row {
+  display: flex;
+  gap: 8px;
+}
+
+.options-api-key-input {
+  flex: 1;
+  letter-spacing: 0.3px;
+}
+
+.options-api-key-toggle {
+  padding: 0 14px;
+  border: 1px solid var(--ma-border);
+  border-radius: 8px;
+  background: var(--ma-bg);
+  color: var(--ma-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms, color 150ms;
+}
+
+.options-api-key-toggle:hover {
+  background: var(--ma-bg-tertiary);
+  color: var(--ma-text);
+}

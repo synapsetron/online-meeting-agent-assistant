@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
+from .base import CamelModel
 from .agenda import AgendaItem, AgendaState
 from .hint import Hint
 from .meeting import CaptureState, MeetingInfo
@@ -12,30 +13,31 @@ from .transcript import TranscriptSegment
 
 # --- Client → Server ---
 
-class ConnectMessage(BaseModel):
+class ConnectMessage(CamelModel):
     type: Literal["CONNECT"] = "CONNECT"
     meeting_id: str
     title: str
     agenda_items: list[AgendaItem]
     participants: list[str] = []
+    api_key: str | None = None
 
 
-class AudioStartMessage(BaseModel):
+class AudioStartMessage(CamelModel):
     type: Literal["AUDIO_START"] = "AUDIO_START"
     format: str = "pcm"
     sample_rate: int = 16000
 
 
-class AudioStopMessage(BaseModel):
+class AudioStopMessage(CamelModel):
     type: Literal["AUDIO_STOP"] = "AUDIO_STOP"
 
 
-class DismissHintMessage(BaseModel):
+class DismissHintMessage(CamelModel):
     type: Literal["DISMISS_HINT"] = "DISMISS_HINT"
     hint_id: str
 
 
-class TranscriptMessage(BaseModel):
+class TranscriptMessage(CamelModel):
     type: Literal["TRANSCRIPT"] = "TRANSCRIPT"
     segment: TranscriptSegment
 
@@ -54,27 +56,27 @@ ClientMessage = Annotated[
 
 # --- Server → Client ---
 
-class SessionAckMessage(BaseModel):
+class SessionAckMessage(CamelModel):
     type: Literal["SESSION_ACK"] = "SESSION_ACK"
     session_id: str
 
 
-class NewTranscriptMessage(BaseModel):
+class NewTranscriptMessage(CamelModel):
     type: Literal["NEW_TRANSCRIPT"] = "NEW_TRANSCRIPT"
     segment: TranscriptSegment
 
 
-class AgendaUpdateMessage(BaseModel):
+class AgendaUpdateMessage(CamelModel):
     type: Literal["AGENDA_UPDATE"] = "AGENDA_UPDATE"
     agenda: AgendaState
 
 
-class NewHintMessage(BaseModel):
+class NewHintMessage(CamelModel):
     type: Literal["NEW_HINT"] = "NEW_HINT"
     hint: Hint
 
 
-class StateUpdateMessage(BaseModel):
+class StateUpdateMessage(CamelModel):
     type: Literal["STATE_UPDATE"] = "STATE_UPDATE"
     meeting: MeetingInfo
     agenda: AgendaState
@@ -82,19 +84,19 @@ class StateUpdateMessage(BaseModel):
     recent_transcript: list[TranscriptSegment] = []
 
 
-class CaptureStateMessage(BaseModel):
+class CaptureStateMessage(CamelModel):
     type: Literal["CAPTURE_STATE"] = "CAPTURE_STATE"
     capture_state: CaptureState
 
 
-class MeetingSummaryMessage(BaseModel):
+class MeetingSummaryMessage(CamelModel):
     type: Literal["MEETING_SUMMARY"] = "MEETING_SUMMARY"
     summary: str
     covered_items: list[str]
     missed_items: list[str]
 
 
-class TranscriptErrorMessage(BaseModel):
+class TranscriptErrorMessage(CamelModel):
     type: Literal["TRANSCRIPT_ERROR"] = "TRANSCRIPT_ERROR"
     error: str
     segment_id: str | None = None

@@ -18,16 +18,18 @@ export function App() {
 
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [savedVisible, setSavedVisible] = useState(false);
-  const [showApiKeys, setShowApiKeys] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [backendUrl, setBackendUrl] = useState(DEFAULT_WS_URL);
   const [speechLanguage, setSpeechLanguage] = useState(DEFAULT_SPEECH_LANGUAGE);
+  const [apiKey, setApiKey] = useState("");
 
   useEffect(() => {
     loadSettings().then(setSettings);
     if (isExtensionContext()) {
-      chrome.storage.local.get(["backendUrl", "speechLanguage"]).then((result) => {
+      chrome.storage.local.get(["backendUrl", "speechLanguage", "anthropicApiKey"]).then((result) => {
         if (result.backendUrl) setBackendUrl(result.backendUrl as string);
         if (result.speechLanguage) setSpeechLanguage(result.speechLanguage as string);
+        if (result.anthropicApiKey) setApiKey(result.anthropicApiKey as string);
       });
     }
   }, []);
@@ -125,38 +127,37 @@ export function App() {
       <div className="options-section">
         <h2 className="options-section-title">API Configuration</h2>
         <div className="options-field">
-          <label className="options-label">ASR API Key</label>
-          <input
-            className="options-input"
-            type={showApiKeys ? "text" : "password"}
-            placeholder="sk-..."
-            readOnly
-            value=""
-          />
-          <p className="options-desc">Speech recognition provider API key (not yet connected)</p>
+          <label className="options-label">Anthropic API Key</label>
+          <div className="options-api-key-row">
+            <input
+              className="options-input options-api-key-input"
+              type={showApiKey ? "text" : "password"}
+              placeholder="sk-ant-api03-..."
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                if (isExtensionContext()) {
+                  chrome.storage.local.set({ anthropicApiKey: e.target.value });
+                }
+                showSaved();
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              className="options-api-key-toggle"
+              onClick={() => setShowApiKey(!showApiKey)}
+              type="button"
+            >
+              {showApiKey ? "Hide" : "Show"}
+            </button>
+          </div>
+          <p className="options-desc">
+            Required for AI-powered hints and meeting analysis.
+            Sent to the backend server at connection time.
+            {apiKey ? " Key is stored locally." : ""}
+          </p>
         </div>
-        <div className="options-field">
-          <label className="options-label">LLM API Key</label>
-          <input
-            className="options-input"
-            type={showApiKeys ? "text" : "password"}
-            placeholder="sk-ant-..."
-            readOnly
-            value=""
-          />
-          <p className="options-desc">Language model API key for semantic analysis (not yet connected)</p>
-        </div>
-        <label className="options-checkbox-label" style={{ marginTop: 4 }}>
-          <input
-            type="checkbox"
-            checked={showApiKeys}
-            onChange={(e) => setShowApiKeys(e.target.checked)}
-          />
-          Show API keys
-        </label>
-        <p className="options-desc" style={{ marginTop: 8 }}>
-          Keys are stored locally in browser storage and never transmitted to third parties.
-        </p>
       </div>
 
       <div className="options-section">

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel
+from .base import CamelModel
 
 
 class AgendaItemStatus(str, Enum):
@@ -13,7 +13,7 @@ class AgendaItemStatus(str, Enum):
     SKIPPED = "skipped"
 
 
-class AgendaItem(BaseModel):
+class AgendaItem(CamelModel):
     id: str
     title: str
     description: str | None = None
@@ -21,10 +21,10 @@ class AgendaItem(BaseModel):
     estimated_minutes: float | None = None
     elapsed_seconds: float = 0.0
     evidence: list[str] = []
-    order: int
+    order: int = 0
 
 
-class AgendaState(BaseModel):
+class AgendaState(CamelModel):
     items: list[AgendaItem]
     active_item_id: str | None = None
     start_time: float = 0.0

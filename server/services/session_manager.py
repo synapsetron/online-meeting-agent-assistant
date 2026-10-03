@@ -33,6 +33,7 @@ class SessionManager:
         agenda_items: list[AgendaItem],
         websocket: Any,
         config: Config,
+        api_key_override: str | None = None,
     ) -> SessionContext:
         from server.agents.orchestrator import Orchestrator
 
@@ -41,7 +42,7 @@ class SessionManager:
             agenda_items=agenda_items,
             window_size=config.transcript_window_size,
         )
-        orchestrator = Orchestrator(config=config)
+        orchestrator = Orchestrator(config=config, api_key_override=api_key_override)
         ctx = SessionContext(
             session_id=session_id,
             meeting_id=meeting_id,

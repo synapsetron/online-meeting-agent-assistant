@@ -7,13 +7,41 @@ import type {
   ServerToClient,
   OffscreenToServiceWorker,
 } from "@/types/messages";
-import { MeetingStatus, CaptureState, type MeetingInfo } from "@/types/meeting";
-import { AgendaItemStatus, type AgendaState, type AgendaItem } from "@/types/agenda";
-import type { Hint } from "@/types/hint";
-import type { TranscriptSegment } from "@/types/transcript";
+import { MeetingStatus, CaptureState } from "@/types/meeting";
+import { AgendaItemStatus } from "@/types/agenda";
 import { WebSocketClient, type ConnectionState } from "@/shared/websocket-client";
-
 import { DEFAULT_WS_URL } from "@/shared/constants";
+
+import { createSessionState, pushTranscript, pushHint } from "./session-state";
+import { startTabCapture, stopTabCapture } from "./tab-capture";
+
+// ---- Session state ----
+
+const state = createSessionState();
+
+// ---- Persist / restore agenda ----
+
+async function loadSavedAgenda(): Promise<void> {
+  try {
+    const result = await chrome.storage.local.get("agendaItems");
+    if (Array.isArray(result.agendaItems) && result.agendaItems.length > 0) {
+      state.agenda.items = result.agendaItems.map((item: { id: string; title: string; description?: string; estimatedMinutes?: number }, i: number) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        status: AgendaItemStatus.Pending,
+        estimatedMinutes: item.estimatedMinutes,
+        elapsedSeconds: 0,
+        evidence: [],
+        order: i + 1,
+      }));
+    }
+  } catch {
+    // storage unavailable — keep empty agenda
+  }
+}
+
+loadSavedAgenda();
 
 // ---- Configurable settings ----
 
@@ -25,33 +53,6 @@ async function getBackendUrl(): Promise<string> {
     return DEFAULT_WS_URL;
   }
 }
-
-// ---- Session state ----
-
-const OFFSCREEN_URL = "src/offscreen/offscreen.html";
-
-const state = {
-  meeting: {
-    id: "",
-    title: "",
-    startTime: 0,
-    participants: [],
-    status: MeetingStatus.Disconnected,
-    captureState: CaptureState.Idle,
-  } as MeetingInfo,
-
-  agenda: {
-    items: [] as AgendaItem[],
-    activeItemId: null,
-    startTime: 0,
-    totalElapsedSeconds: 0,
-  } as AgendaState,
-
-  hints: [] as Hint[],
-  recentTranscript: [] as TranscriptSegment[],
-  sessionId: null as string | null,
-  tabCaptureActive: false,
-};
 
 // ---- WebSocket client ----
 
@@ -70,9 +71,7 @@ function broadcastToContentScripts(message: BackgroundToContent): void {
   chrome.tabs.query({}, (tabs) => {
     for (const tab of tabs) {
       if (tab.id !== undefined) {
-        chrome.tabs.sendMessage(tab.id, message).catch(() => {
-          // Tab may not have content script loaded — ignore
-        });
+        chrome.tabs.sendMessage(tab.id, message).catch(() => {});
       }
     }
   });
@@ -84,52 +83,47 @@ function handleServerMessage(data: unknown): void {
   const message = data as ServerToClient;
 
   switch (message.type) {
-    case "SESSION_ACK": {
-      state.sessionId = message.session_id;
+    case "SESSION_ACK":
+      state.sessionId = message.sessionId;
       state.meeting.status = MeetingStatus.Connected;
-      console.log("[ServiceWorker] Session established:", message.session_id);
+      console.log("[ServiceWorker] Session established:", message.sessionId);
       break;
-    }
 
-    case "NEW_TRANSCRIPT": {
-      const MAX_RECENT = 100;
+    case "NEW_TRANSCRIPT":
       if (message.segment.isFinal) {
-        state.recentTranscript.push(message.segment);
-        if (state.recentTranscript.length > MAX_RECENT) {
-          state.recentTranscript = state.recentTranscript.slice(-MAX_RECENT);
-        }
+        pushTranscript(state, message.segment);
       }
       broadcastToContentScripts({
         type: "NEW_TRANSCRIPT",
         segment: message.segment,
       });
       break;
-    }
 
-    case "NEW_HINT": {
-      state.hints.push(message.hint);
-      const MAX_HINTS = 50;
-      if (state.hints.length > MAX_HINTS) {
-        state.hints = state.hints.slice(-MAX_HINTS);
-      }
+    case "NEW_HINT":
+      pushHint(state, message.hint);
       broadcastToContentScripts({
         type: "NEW_HINT",
         hint: message.hint,
       });
       break;
-    }
 
-    case "AGENDA_UPDATE": {
+    case "AGENDA_UPDATE":
       state.agenda = message.agenda;
       broadcastToContentScripts({
         type: "AGENDA_UPDATE",
         agenda: message.agenda,
       });
       break;
-    }
 
-    case "STATE_UPDATE": {
-      state.meeting = { ...state.meeting, ...message.meeting };
+    case "STATE_UPDATE":
+      state.meeting = {
+        ...state.meeting,
+        ...message.meeting,
+        // Preserve locally-managed fields that the backend doesn't track
+        startTime: state.meeting.startTime,
+        captureState: state.meeting.captureState,
+        status: state.meeting.status,
+      };
       state.agenda = message.agenda;
       if (message.hints) state.hints = message.hints;
       if (message.recentTranscript) state.recentTranscript = message.recentTranscript;
@@ -141,33 +135,29 @@ function handleServerMessage(data: unknown): void {
         recentTranscript: message.recentTranscript,
       });
       break;
-    }
 
-    case "CAPTURE_STATE": {
+    case "CAPTURE_STATE":
       state.meeting.captureState = message.captureState;
       broadcastToContentScripts({
         type: "CAPTURE_STATE",
         captureState: message.captureState,
       });
       break;
-    }
 
-    case "MEETING_SUMMARY": {
+    case "MEETING_SUMMARY":
       state.meeting.status = MeetingStatus.Ended;
       state.meeting.captureState = CaptureState.Stopped;
       broadcastToContentScripts({
         type: "MEETING_SUMMARY",
         summary: message.summary,
-        coveredItems: message.covered_items,
-        missedItems: message.missed_items,
+        coveredItems: message.coveredItems,
+        missedItems: message.missedItems,
       });
       break;
-    }
 
-    case "ERROR": {
+    case "ERROR":
       console.error("[ServiceWorker] Server error:", message.message);
       break;
-    }
 
     default:
       console.warn("[ServiceWorker] Unknown message type:", (message as { type: string }).type);
@@ -176,8 +166,18 @@ function handleServerMessage(data: unknown): void {
 
 // ---- Start/stop WebSocket connection ----
 
+async function getApiKey(): Promise<string> {
+  try {
+    const result = await chrome.storage.local.get("anthropicApiKey");
+    return (result.anthropicApiKey as string) || "";
+  } catch {
+    return "";
+  }
+}
+
 async function startConnection(): Promise<void> {
   const url = await getBackendUrl();
+  const apiKey = await getApiKey();
   const client = getWsClient();
   client.setUrl(url);
 
@@ -210,6 +210,7 @@ async function startConnection(): Promise<void> {
       estimated_minutes: item.estimatedMinutes,
     })),
     participants: state.meeting.participants,
+    ...(apiKey ? { api_key: apiKey } : {}),
   };
 
   state.meeting.status = MeetingStatus.Connecting;
@@ -227,87 +228,6 @@ function stopConnection(): void {
   state.meeting.captureState = CaptureState.Stopped;
   state.meeting.status = MeetingStatus.Disconnected;
   state.sessionId = null;
-}
-
-// ---------------------------------------------------------------------------
-// Offscreen document management
-// ---------------------------------------------------------------------------
-
-async function hasOffscreenDocument(): Promise<boolean> {
-  if (chrome.offscreen && typeof chrome.offscreen.hasDocument === "function") {
-    return chrome.offscreen.hasDocument();
-  }
-
-  if (chrome.runtime.getContexts) {
-    const contexts = await chrome.runtime.getContexts({
-      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-      documentUrls: [chrome.runtime.getURL(OFFSCREEN_URL)],
-    });
-    return contexts.length > 0;
-  }
-
-  return false;
-}
-
-async function ensureOffscreenDocument(): Promise<void> {
-  if (await hasOffscreenDocument()) {
-    return;
-  }
-
-  await chrome.offscreen.createDocument({
-    url: OFFSCREEN_URL,
-    reasons: [chrome.offscreen.Reason.USER_MEDIA],
-    justification: "Processing tab audio capture for meeting transcription",
-  });
-}
-
-async function closeOffscreenDocument(): Promise<void> {
-  if (await hasOffscreenDocument()) {
-    await chrome.offscreen.closeDocument();
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Tab capture management
-// ---------------------------------------------------------------------------
-
-async function startTabCapture(): Promise<boolean> {
-  try {
-    await ensureOffscreenDocument();
-    const streamId = await chrome.tabCapture.getMediaStreamId({});
-
-    await chrome.runtime.sendMessage({
-      type: "START_TAB_CAPTURE",
-      streamId,
-    });
-
-    state.tabCaptureActive = true;
-    console.log("[ServiceWorker] Tab capture initiated");
-    return true;
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown tab capture error";
-    console.warn("[ServiceWorker] Tab capture failed, microphone-only mode:", message);
-    await closeOffscreenDocument().catch(() => {});
-    state.tabCaptureActive = false;
-    return false;
-  }
-}
-
-async function stopTabCapture(): Promise<void> {
-  if (!state.tabCaptureActive) {
-    return;
-  }
-
-  try {
-    await chrome.runtime.sendMessage({ type: "STOP_TAB_CAPTURE" });
-  } catch {
-    // Offscreen document may already be closed
-  }
-
-  await closeOffscreenDocument().catch(() => {});
-  state.tabCaptureActive = false;
-  console.log("[ServiceWorker] Tab capture stopped");
 }
 
 // ---- Message listener ----
@@ -334,7 +254,7 @@ chrome.runtime.onMessage.addListener(
       case "TOGGLE_CAPTURE": {
         if (state.meeting.captureState === CaptureState.Capturing) {
           stopConnection();
-          stopTabCapture().catch((err) =>
+          stopTabCapture(state).catch((err) =>
             console.warn("[ServiceWorker] Error stopping tab capture:", err),
           );
           broadcastToContentScripts({
@@ -350,13 +270,13 @@ chrome.runtime.onMessage.addListener(
           }
           if (state.agenda.items.length === 0) {
             state.agenda.items = [
-              { id: "1", title: "General discussion", status: AgendaItemStatus.Pending, estimatedMinutes: 30, elapsedSeconds: 0, evidence: [], order: 1 },
+              { id: "item-1", title: "General discussion", status: AgendaItemStatus.Pending, estimatedMinutes: 30, elapsedSeconds: 0, evidence: [], order: 1 },
             ];
           }
           startConnection().catch((err) => {
             console.error("[ServiceWorker] Failed to start connection:", err);
           });
-          startTabCapture().catch((err) =>
+          startTabCapture(state).catch((err) =>
             console.warn("[ServiceWorker] Error starting tab capture:", err),
           );
           broadcastToContentScripts({
@@ -383,11 +303,7 @@ chrome.runtime.onMessage.addListener(
           wsClient.send({ type: "TRANSCRIPT", segment: message.segment } as ClientToServer);
         }
         if (message.segment.isFinal) {
-          state.recentTranscript.push(message.segment);
-          const MAX_RECENT = 100;
-          if (state.recentTranscript.length > MAX_RECENT) {
-            state.recentTranscript = state.recentTranscript.slice(-MAX_RECENT);
-          }
+          pushTranscript(state, message.segment);
         }
         sendResponse({ ok: true });
         break;
@@ -404,12 +320,27 @@ chrome.runtime.onMessage.addListener(
         sendResponse({ ok: true });
         break;
 
+      case "UPDATE_AGENDA": {
+        state.agenda.items = message.items.map((item, i) => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          status: AgendaItemStatus.Pending,
+          estimatedMinutes: item.estimatedMinutes,
+          elapsedSeconds: 0,
+          evidence: [],
+          order: i + 1,
+        }));
+        chrome.storage.local.set({ agendaItems: message.items });
+        sendResponse({ ok: true });
+        break;
+      }
+
       case "UPDATE_SETTINGS":
         chrome.storage.local.set({ settings: message.settings });
         sendResponse({ ok: true });
         break;
 
-      // Messages from the offscreen document
       case "TAB_CAPTURE_STARTED":
         console.log("[ServiceWorker] Offscreen confirmed tab capture started");
         sendResponse({ ok: true });

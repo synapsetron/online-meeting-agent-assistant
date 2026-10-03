@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from .base import CamelModel
 
 
-class Speaker(BaseModel):
+class Speaker(CamelModel):
     id: str
     name: str
     color: str = "#888888"
 
 
-class TranscriptSegment(BaseModel):
+class TranscriptSegment(CamelModel):
     id: str
     meeting_id: str
     speaker_id: str

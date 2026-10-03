@@ -53,7 +53,7 @@ def _get_config() -> Config:
 
 async def push_to_client(ws: WebSocket, message: Any) -> None:
     try:
-        data = message.model_dump(mode="json")
+        data = message.model_dump(mode="json", by_alias=True)
         await ws.send_json(data)
     except Exception:
         logger.exception("Failed to push message to client")
@@ -170,6 +170,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         try:
             connect_msg = ConnectMessage.model_validate(raw)
         except ValidationError as exc:
+            logger.warning("Invalid CONNECT message: %s", exc)
             await ws.send_json({"error": str(exc)})
             await ws.close(code=1008, reason="Invalid CONNECT message")
             return
@@ -181,6 +182,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             agenda_items=connect_msg.agenda_items,
             websocket=ws,
             config=config,
+            api_key_override=connect_msg.api_key,
         )
         ctx.state.meeting.title = connect_msg.title
         ctx.state.meeting.participants = connect_msg.participants

@@ -69,7 +69,7 @@ Web Speech API chosen as the ASR provider. `SpeechRecognitionService` in `src/sh
 
 ### Phase 3: Browser capture and meeting UI — COMPLETE
 
-Chrome Manifest V3 extension with content script overlay, popup, options page. WebSocket connection to backend. `tabCapture` via offscreen document for tab audio capture. Google Meet page detection (`meet-detector.ts`) using URL matching and DOM observation (MutationObserver for call join/leave). **Remaining:** route captured tab audio to speech recognition (currently microphone-only via Web Speech API).
+Chrome Manifest V3 extension with content script overlay, popup, options page. WebSocket connection to backend. `tabCapture` via offscreen document for tab audio capture. Google Meet page detection (`meet-detector.ts`) using URL matching and DOM observation (MutationObserver for call join/leave). Content script built as IIFE (Chrome silently ignores ES module content scripts). Start/Stop recording controls in both popup and overlay. Backend models use CamelModel base class for camelCase JSON serialization (`by_alias=True`). Meet detector supports English, Ukrainian, and Russian UI. **Tested end-to-end:** local user transcription works via Web Speech API → overlay displays transcript with speaker label "You". **Remaining:** route captured tab audio to speech recognition (currently microphone-only); multi-participant speaker diarization not available (Web Speech API limitation).
 
 ### Phase 4: Semantic analysis and low-latency hints — COMPLETE
 

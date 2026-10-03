@@ -6,6 +6,7 @@ import type { MeetingInfo, CaptureState } from "./meeting";
 export type PopupToBackground =
   | { type: "GET_STATE" }
   | { type: "TOGGLE_CAPTURE" }
+  | { type: "UPDATE_AGENDA"; items: { id: string; title: string; description?: string; estimatedMinutes?: number }[] }
   | { type: "UPDATE_SETTINGS"; settings: Record<string, unknown> };
 
 export type BackgroundToContent =
@@ -32,20 +33,20 @@ export type BackgroundToPopup = {
 };
 
 export type ClientToServer =
-  | { type: "CONNECT"; meeting_id: string; title: string; agenda_items: { id: string; title: string; description?: string; estimated_minutes?: number }[]; participants: string[] }
+  | { type: "CONNECT"; meeting_id: string; title: string; agenda_items: { id: string; title: string; description?: string; estimated_minutes?: number }[]; participants: string[]; api_key?: string }
   | { type: "TRANSCRIPT"; segment: TranscriptSegment }
   | { type: "AUDIO_START" }
   | { type: "AUDIO_STOP" }
   | { type: "DISMISS_HINT"; hint_id: string };
 
 export type ServerToClient =
-  | { type: "SESSION_ACK"; session_id: string }
+  | { type: "SESSION_ACK"; sessionId: string }
   | { type: "NEW_TRANSCRIPT"; segment: TranscriptSegment }
   | { type: "AGENDA_UPDATE"; agenda: AgendaState }
   | { type: "NEW_HINT"; hint: Hint }
   | { type: "STATE_UPDATE"; meeting: MeetingInfo; agenda: AgendaState; hints?: Hint[]; recentTranscript?: TranscriptSegment[] }
   | { type: "CAPTURE_STATE"; captureState: CaptureState }
-  | { type: "MEETING_SUMMARY"; summary: string; covered_items: string[]; missed_items: string[] }
+  | { type: "MEETING_SUMMARY"; summary: string; coveredItems: string[]; missedItems: string[] }
   | { type: "ERROR"; message: string };
 
 export type ServiceWorkerToOffscreen =
