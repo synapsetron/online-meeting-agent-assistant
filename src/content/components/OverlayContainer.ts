@@ -11,6 +11,8 @@ import { TranscriptPanel } from "./TranscriptPanel";
 import { HintCards } from "./HintCards";
 import { CaptureStatusBar } from "./CaptureStatusBar";
 import { OverlaySettings } from "./OverlaySettings";
+import { MeetingSummaryPanel } from "./MeetingSummaryPanel";
+import type { MeetingSummaryPayload } from "@/types/summary";
 
 export class OverlayContainer {
   readonly root: HTMLElement;
@@ -21,6 +23,7 @@ export class OverlayContainer {
   private hintCards: HintCards;
   private captureStatusBar: CaptureStatusBar;
   private overlaySettings: OverlaySettings;
+  private summaryPanel: MeetingSummaryPanel;
   private bodyEl!: HTMLElement;
   private isMinimized = false;
   private cleanups: (() => void)[] = [];
@@ -42,6 +45,7 @@ export class OverlayContainer {
     this.agendaTracker = new AgendaTracker();
     this.transcriptPanel = new TranscriptPanel();
     this.hintCards = new HintCards((id) => this.onDismissHint?.(id));
+    this.summaryPanel = new MeetingSummaryPanel();
     this.overlaySettings = new OverlaySettings(() => {
       this.bodyEl.style.display = "";
       this.overlaySettings.root.style.display = "none";
@@ -76,6 +80,7 @@ export class OverlayContainer {
     const titlebar = el("div", { className: "ma-titlebar" }, [titlebarIcon, titlebarText, actions]);
 
     this.bodyEl = el("div", { className: "ma-body" }, [
+      this.summaryPanel.root,
       this.agendaTracker.root,
       this.transcriptPanel.root,
       this.hintCards.root,
@@ -175,7 +180,18 @@ export class OverlayContainer {
     this.hintCards.addHint(hint);
   }
 
+  showSummaryPending() {
+    this.summaryPanel.showPending();
+    this.bodyEl.scrollTop = 0;
+  }
+
+  showSummary(payload: MeetingSummaryPayload) {
+    this.summaryPanel.update(payload);
+    this.bodyEl.scrollTop = 0;
+  }
+
   setCaptureState(state: CaptureState) {
+    if (state === CaptureState.Capturing) this.summaryPanel.clear();
     this.captureStatusBar.update(state);
     this.transcriptPanel.setCapturing(state === CaptureState.Capturing);
   }
@@ -187,5 +203,6 @@ export class OverlayContainer {
     this.hintCards.destroy();
     this.captureStatusBar.destroy();
     this.overlaySettings.destroy();
+    this.summaryPanel.destroy();
   }
 }

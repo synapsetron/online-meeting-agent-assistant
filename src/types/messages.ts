@@ -2,6 +2,7 @@ import type { AgendaState } from "./agenda";
 import type { TranscriptSegment } from "./transcript";
 import type { Hint } from "./hint";
 import type { MeetingInfo, CaptureState } from "./meeting";
+import type { MeetingSummaryPayload } from "./summary";
 
 export type PopupToBackground =
   | { type: "GET_STATE" }
@@ -15,7 +16,8 @@ export type BackgroundToContent =
   | { type: "NEW_HINT"; hint: Hint }
   | { type: "AGENDA_UPDATE"; agenda: AgendaState }
   | { type: "CAPTURE_STATE"; captureState: CaptureState }
-  | { type: "MEETING_SUMMARY"; summary: string; coveredItems: string[]; missedItems: string[] };
+  | { type: "SHOW_OVERLAY" }
+  | ({ type: "MEETING_SUMMARY" } & MeetingSummaryPayload);
 
 export type ContentToBackground =
   | { type: "DISMISS_HINT"; hintId: string }
@@ -46,7 +48,7 @@ export type ServerToClient =
   | { type: "NEW_HINT"; hint: Hint }
   | { type: "STATE_UPDATE"; meeting: MeetingInfo; agenda: AgendaState; hints?: Hint[]; recentTranscript?: TranscriptSegment[] }
   | { type: "CAPTURE_STATE"; captureState: CaptureState }
-  | { type: "MEETING_SUMMARY"; summary: string; coveredItems: string[]; missedItems: string[] }
+  | ({ type: "MEETING_SUMMARY" } & MeetingSummaryPayload)
   | { type: "ERROR"; message: string };
 
 export type ServiceWorkerToOffscreen =

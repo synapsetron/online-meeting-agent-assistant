@@ -84,7 +84,7 @@ export class TranscriptPanel {
 
   private createSegmentElement(segment: TranscriptSegment): HTMLElement {
     const speaker = this.speakers.get(segment.speakerId);
-    const displayName = speaker?.name ?? (segment.speakerId === "local-user" ? "You" : "Unknown");
+    const displayName = speaker?.name ?? (segment.speakerId === "local-user" ? "You" : segment.speakerId);
     const speakerName = el("span", {
       className: "ma-transcript-speaker",
       textContent: displayName,
