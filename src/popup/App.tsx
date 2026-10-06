@@ -1,23 +1,38 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MeetingStatus } from "./components/MeetingStatus";
 import { CaptureToggle } from "./components/CaptureToggle";
-import { AgendaOverview } from "./components/AgendaOverview";
 import { AgendaEditor } from "./components/AgendaEditor";
-import { SettingsPanel } from "./components/SettingsPanel";
-import { ConsentIndicator } from "./components/ConsentIndicator";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { useChromeState } from "@/shared/hooks/useChromeState";
 import { CaptureState } from "@/types/meeting";
-import type { PopupToBackground } from "@/types/messages";
+import type { BackgroundToContent, PopupToBackground } from "@/types/messages";
 import "./popup.css";
 
-type PopupView = "main" | "agenda" | "settings";
+type PopupView = "main" | "agenda";
 
+/**
+ * Minimal launcher. The full UI (agenda, hints, transcript, quick settings)
+ * lives in the overlay injected into the Google Meet page.
+ */
 export function App() {
   useTheme();
   const { meetingStatus, captureState, meetingTitle, startTime, agendaItems, refresh } =
     useChromeState();
   const [view, setView] = useState<PopupView>("main");
+
+  // Opening the popup brings back an overlay the user closed on the Meet tab.
+  useEffect(() => {
+    chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(([tab]) => {
+        if (tab?.id !== undefined) {
+          chrome.tabs
+            .sendMessage(tab.id, { type: "SHOW_OVERLAY" } satisfies BackgroundToContent)
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const isCapturing = captureState === CaptureState.Capturing;
 
@@ -36,14 +51,6 @@ export function App() {
     );
   }
 
-  if (view === "settings") {
-    return (
-      <div className="popup-container">
-        <SettingsPanel onClose={() => setView("main")} />
-      </div>
-    );
-  }
-
   return (
     <div className="popup-container">
       <div className="popup-header">
@@ -53,7 +60,7 @@ export function App() {
         </div>
         <button
           className="popup-settings-btn"
-          onClick={() => setView("settings")}
+          onClick={() => chrome.runtime.openOptionsPage()}
           aria-label="Settings"
           title="Settings"
         >
@@ -72,12 +79,18 @@ export function App() {
         onToggle={handleToggleCapture}
       />
 
-      <AgendaOverview
-        items={agendaItems}
-        onEdit={isCapturing ? undefined : () => setView("agenda")}
-      />
+      <button
+        className="popup-link-btn"
+        onClick={() => setView("agenda")}
+        disabled={isCapturing}
+        title={isCapturing ? "Stop capture to edit the agenda" : undefined}
+      >
+        Edit agenda ({agendaItems.length})
+      </button>
 
-      <ConsentIndicator />
+      <p className="capture-hint">
+        Agenda, hints and transcript are shown in the panel on the Google Meet page.
+      </p>
     </div>
   );
 }
