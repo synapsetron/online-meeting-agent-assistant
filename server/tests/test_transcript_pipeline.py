@@ -151,10 +151,15 @@ class TestStateUpdateMessageExtended:
 
 
 def _make_config() -> Config:
+    # These tests cover the deterministic path only: the call cap of 0 keeps the
+    # background LLM call (and any network access) from ever starting.
     return Config(
         anthropic_api_key="test-key",
         llm_debounce_seconds=0.0,
+        llm_min_new_words=0,
         llm_timeout_seconds=5.0,
+        llm_max_calls_per_session=0,
+        llm_flush_idle_seconds=0.0,
     )
 
 
@@ -295,3 +300,41 @@ class TestOrchestratorProcessSegment:
         result = await orchestrator.process_segment(segment, state)
 
         assert result.time_warnings == []
+
+
+class TestLlmCostControls:
+    @pytest.mark.asyncio
+    async def test_skips_llm_until_enough_new_words_and_caps_calls(self) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        cfg = Config(
+            anthropic_api_key="k",
+            llm_debounce_seconds=0.0,
+            llm_min_new_words=10,
+            llm_max_calls_per_session=2,
+            llm_flush_idle_seconds=0.0,
+        )
+        orch = Orchestrator(config=cfg)
+        state = MeetingStateStore("m", [AgendaItem(id="a", title="Topic", order=1)], 8)
+        with patch.object(orch._hint_gen, "generate", new=AsyncMock(return_value=[])) as gen:
+            def seg(i: int, words: int) -> TranscriptSegment:
+                return TranscriptSegment(
+                    id=f"s{i}", meeting_id="m", speaker_id="u",
+                    text=" ".join(["word"] * words), timestamp=float(i), is_final=True,
+                )
+            # The LLM call runs in the background; drain() waits for it.
+            await orch.process_segment(seg(1, 4), state)   # 4 words: skipped
+            await orch.drain()
+            assert gen.await_count == 0
+            result = await orch.process_segment(seg(2, 8), state)   # 12 pending: call 1
+            assert result.llm_triggered is True
+            assert result.hints == []
+            await orch.drain()
+            await orch.process_segment(seg(3, 12), state)  # call 2
+            await orch.drain()
+            result = await orch.process_segment(seg(4, 12), state)  # cap reached
+            assert result.llm_triggered is False
+            await orch.drain()
+            assert gen.await_count == 2
+            assert orch._last_skip_reason == "call_cap_reached"
+        await orch.aclose()

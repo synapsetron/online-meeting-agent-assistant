@@ -20,6 +20,7 @@ export class AgendaTracker {
   private activeTimeEl: HTMLElement | null = null;
   private activeStartTime = 0;
   private activeElapsed = 0;
+  private activeItemId: string | null = null;
 
   constructor() {
     this.section = new CollapsibleSection("Agenda", "Agenda section");
@@ -33,7 +34,17 @@ export class AgendaTracker {
     this.root = this.section.root;
   }
 
+  private currentElapsed(): number {
+    return this.activeElapsed + Math.floor((Date.now() - this.activeStartTime) / 1000);
+  }
+
   update(state: AgendaState) {
+    // Keep the running local clock if the same item is still active and the
+    // server value is not ahead of it, so periodic syncs don't restart the timer.
+    const running = this.activeItemId !== null ? this.currentElapsed() : 0;
+    const previousId = this.activeItemId;
+    this.activeItemId = null;
+
     if (this.timerInterval) {
       clearInterval(this.timerInterval);
       this.timerInterval = null;
@@ -67,9 +78,15 @@ export class AgendaTracker {
         title: item.description ?? item.title,
       });
 
+      const keepLocal =
+        item.status === AgendaItemStatus.Active &&
+        item.id === previousId &&
+        running >= item.elapsedSeconds;
+      const shown = keepLocal ? running : item.elapsedSeconds;
+
       const timeText =
         item.status === AgendaItemStatus.Active
-          ? formatTime(item.elapsedSeconds)
+          ? formatTime(shown)
           : item.elapsedSeconds > 0
             ? formatTime(item.elapsedSeconds)
             : item.estimatedMinutes
@@ -84,7 +101,8 @@ export class AgendaTracker {
       if (item.status === AgendaItemStatus.Active) {
         this.activeTimeEl = timeEl;
         this.activeStartTime = Date.now();
-        this.activeElapsed = item.elapsedSeconds;
+        this.activeElapsed = shown;
+        this.activeItemId = item.id;
       }
 
       const li = el("li", { className: `ma-agenda-item ${item.status}` }, [
@@ -99,8 +117,7 @@ export class AgendaTracker {
     if (this.activeTimeEl) {
       this.timerInterval = setInterval(() => {
         if (!this.activeTimeEl) return;
-        const extra = Math.floor((Date.now() - this.activeStartTime) / 1000);
-        this.activeTimeEl.textContent = formatTime(this.activeElapsed + extra);
+        this.activeTimeEl.textContent = formatTime(this.currentElapsed());
       }, 1000);
     }
   }
