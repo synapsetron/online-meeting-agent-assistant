@@ -6,17 +6,30 @@ This repository implements a master's thesis project: an intelligent agent assis
 
 ### What is implemented
 
-- **Backend** (Python + FastAPI + asyncio): Master orchestrator with three sub-agents (transcript analyzer, agenda tracker, hint generator). WebSocket gateway accepts transcript segments, processes through the pipeline, and pushes hints/agenda updates back to the client. Circuit breaker for LLM resilience. Rolling summary for context compression. 156 automated tests.
-- **Chrome extension** (Manifest V3, TypeScript + React): Content script overlay with agenda tracker, hint cards, transcript panel. Service worker connects to backend via WebSocket. Speech recognition via Web Speech API (default: `uk-UA` Ukrainian). Options page for backend URL and language settings. Google Meet page detection via URL matching and DOM observation. `tabCapture` + offscreen document for tab audio capture.
-- **ASR**: Browser-side Web Speech API (`webkitSpeechRecognition`), chosen because it is free, supports Ukrainian, and runs natively in Chrome with no API key. The backend does not perform speech-to-text; it receives transcript segments from the browser.
-- **Data flow**: Microphone → Web Speech API → TranscriptSegment → service worker → WebSocket → FastAPI → orchestrator (analyzer → tracker → hint generator) → hints/updates → WebSocket → service worker → overlay UI.
+- **Backend** (Python + FastAPI + asyncio): master orchestrator with four sub-agents (transcript analyzer, agenda tracker, hint generator, summary agent). WebSocket gateway accepts transcript segments, runs the deterministic pipeline immediately and the LLM hint call in the background, and pushes hints/agenda updates back. Circuit breaker, cost metering and caps, structured logging, end-of-meeting statistics and report. 156 automated tests.
+- **Chrome extension** (Manifest V3, TypeScript + React): content-script overlay with agenda tracker, hint cards, transcript panel and a meeting-summary panel shown after Stop. Service worker connects to the backend via WebSocket. Options page for backend URL, language, API key and user name. Google Meet page detection via URL matching and DOM observation. `tabCapture` + offscreen document for tab audio capture.
+- **ASR / transcript sources**: the local user is transcribed by the browser Web Speech API (`webkitSpeechRecognition`, default `uk-UA`); remote participants are read from Google Meet's own captions (`src/shared/meet-captions.ts`), which the extension turns on and hides. The backend never does speech-to-text; it receives text segments with a speaker label.
+- **Data flow**: microphone → Web Speech API, and Meet captions DOM → `TranscriptSegment` → service worker → WebSocket → FastAPI → orchestrator (analyzer → tracker, then background hint generator) → hints/updates → WebSocket → service worker → overlay. On Stop: statistics, then the LLM report.
+- **Evaluation tooling**: offline cost replay harness (`server/eval/`) with synthetic Ukrainian scenarios.
 
 ### What is not yet implemented
 
-- Audio stream routing from `tabCapture` to speech recognition (offscreen document captures audio but ASR integration deferred)
-- End-to-end latency measurement
-- Evaluation protocol and experiments
+- Audio stream routing from `tabCapture` to speech recognition (the offscreen document captures audio but nothing consumes it; remote speech comes from Meet captions instead)
+- End-to-end latency measurement (capture → visible hint); needs timestamps from the extension
+- Hint-quality and summary-quality evaluation (no labelled scenarios, no paid evaluation run yet)
+- LLM-driven agenda item switching (WP5): the active item still changes only on keyword matches
+- Mid-meeting agenda edits are not sent to the backend (agenda travels only in `CONNECT`)
 - Thesis documentation artifacts (diagrams, performance charts)
+
+### Known behaviour and limitations (learned in testing)
+
+- **After changing extension code:** `npm run build`, press ⟳ on the extension in `chrome://extensions`, and reload the Meet tab. Without the reload the old service worker keeps running (seen as `push_skipped_client_gone` right after Stop) and old content scripts throw `Extension context invalidated`.
+- **After changing backend code:** restart the backend and press Start again; a running session keeps its old orchestrator, and the API key is sent only in `CONNECT`.
+- **Meet captions language** is a Meet setting (Settings → Captions), independent of the extension's recognition language. If it is left on English, Ukrainian speech of remote participants is transcribed as nonsense.
+- **Local speaker label:** resolved from the options page name, then the Meet self tile, then the Google account button; otherwise it stays `local-user` (shown as "You").
+- **Agenda matching is lexical:** an item title in one language does not match speech in another; half of the significant title words (with crude suffix stemming) must appear. An item starts on a match when nothing is active; switching to another item needs a transition phrase or a segment that matches the other item and not the active one.
+- **Speaker shares are measured in transcribed words**, not audio seconds (the backend gets text only). Topic time is how long the item was active.
+- After Stop the summary can be delayed by up to ~11 s if a hint call is in flight; speech in the last seconds before Stop may not be analysed for hints.
 
 ## Working in this repository
 
@@ -28,19 +41,22 @@ This repository implements a master's thesis project: an intelligent agent assis
 
 ### Running the project
 
+Run everything from the repository root. The backend uses the virtual environment in `server/.venv`.
+
 **Backend:**
 ```bash
-pip install -e ".[dev]"
-python -m server.main          # starts at ws://localhost:8000/ws
-python -m pytest server/tests/ -v
+pip install -e ".[dev]"                                              # once, inside server/.venv
+LOG_FILE=logs/backend.jsonl server/.venv/bin/python -m server.main   # ws://localhost:8000/ws
+server/.venv/bin/python -m pytest server/tests -q
+server/.venv/bin/python -m server.eval.cost_replay --markdown docs/cost-replay-results.md   # offline cost estimates
 ```
 
 **Frontend:**
 ```bash
 npm install
-npm run build                  # builds to dist/
+npm run build                  # builds to dist/ (then reload the extension and the Meet tab)
 npm run dev                    # watch mode build
-npm run dev:preview            # preview page with mock data
+npm run dev:preview            # preview page with mock data (Stop shows a mock summary)
 npm run type-check             # TypeScript checks
 ```
 
@@ -69,15 +85,15 @@ Web Speech API chosen as the ASR provider. `SpeechRecognitionService` in `src/sh
 
 ### Phase 3: Browser capture and meeting UI — COMPLETE
 
-Chrome Manifest V3 extension with content script overlay, popup, options page. WebSocket connection to backend. `tabCapture` via offscreen document for tab audio capture. Google Meet page detection (`meet-detector.ts`) using URL matching and DOM observation (MutationObserver for call join/leave). Content script built as IIFE (Chrome silently ignores ES module content scripts). Start/Stop recording controls in both popup and overlay. Backend models use CamelModel base class for camelCase JSON serialization (`by_alias=True`). Meet detector supports English, Ukrainian, and Russian UI. **Tested end-to-end:** local user transcription works via Web Speech API → overlay displays transcript with speaker label "You". **Remaining:** route captured tab audio to speech recognition (currently microphone-only); multi-participant speaker diarization not available (Web Speech API limitation).
+Chrome Manifest V3 extension with content script overlay, popup, options page. WebSocket connection to backend. `tabCapture` via offscreen document for tab audio capture. Google Meet page detection (`meet-detector.ts`) using URL matching and DOM observation (MutationObserver for call join/leave). Content script built as IIFE (Chrome silently ignores ES module content scripts). Start/Stop recording controls in both popup and overlay. Backend models use CamelModel base class for camelCase JSON serialization (`by_alias=True`). Meet detector supports English, Ukrainian, and Russian UI. **Tested end-to-end:** local user transcription works via Web Speech API → overlay displays transcript with speaker label "You". Remote participants are transcribed from Meet captions with their names; agenda edits in the popup are broadcast to open tabs. **Remaining:** route captured tab audio to speech recognition (not needed while Meet captions are used).
 
 ### Phase 4: Semantic analysis and low-latency hints — COMPLETE
 
-LLM-backed hint generator with Anthropic Messages API (default `claude-haiku-5-5`, overridable via `ANTHROPIC_MODEL`), rate-limited single-flight requests, bounded context window, structured JSON output with validation. Circuit breaker (3 failures → 60s open → half-open probe). Rolling summary is implemented but effectively disabled by default (see Cost and token optimization). **Remaining:** end-to-end latency measurement; measured cost-per-session and hint-quality evaluation of the cost settings.
+LLM-backed hint generator with Anthropic Messages API (default `claude-haiku-5-5`, overridable via `ANTHROPIC_MODEL`), rate-limited single-flight requests, bounded context window, structured JSON output with validation. Circuit breaker (3 failures → 60s open → half-open probe). Rolling summary is implemented but effectively disabled by default (see Cost and token optimization). Cost optimization (thesis challenge 8) and the background LLM call are done; an end-of-meeting summary agent was added. **Remaining:** end-to-end latency measurement and hint/summary quality evaluation.
 
-### Phase 5: Evaluate, document, and prepare thesis evidence — NOT STARTED
+### Phase 5: Evaluate, document, and prepare thesis evidence — STARTED
 
-Evaluation protocol, test datasets, metrics (WER, precision/recall/F1, latency p50/p95), ablation studies, thesis diagrams and documentation.
+Done: cost model and hypotheses (`docs/challenge-llm-cost-optimization.md`), offline cost replay with configurations K0–K4 (`docs/cost-replay-results.md`), structured logs as a data source, two measured live sessions (see Results so far). Not done: labelled scenarios, the paid evaluation run (WP4), WER, precision/recall/F1 of hints, end-to-end latency p50/p95, thesis diagrams.
 
 ## Architecture and integration boundaries
 
@@ -137,7 +153,7 @@ Sources: [Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [O
 - `max_tokens` is a backstop, not a savings knob; for this task it is low only because the output is a short JSON array. Hitting it yields `stop_reason: "max_tokens"` and a truncated (unparseable) answer.
 - Anthropic's own order of levers: free wins first (caching, input trimming, batch, prompt audit), then tradeoffs (effort, budgets, model choice). Compare models on cost per completed task, and price the hardest tenth of tasks, not the median.
 
-### Decisions implemented (project decisions — not yet measured)
+### Decisions implemented (project decisions; effect measured only on the live sessions below)
 | Lever | Setting (`server/config.py`) | Rationale |
 |---|---|---|
 | Model | `claude-haiku-5-5` (`ANTHROPIC_MODEL` overrides) | Cheapest current model; task is short structured classification. |
@@ -146,10 +162,43 @@ Sources: [Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [O
 | Hard caps | `llm_max_calls_per_session=200`, `llm_max_session_cost_usd=0.05` | Caps as a budget: the cost cap is the real hard stop, the call cap a runaway guard (~80 calls ≈ $0.015 per hour at one call per 45 s, from the per-call cost measured on one session — not a guarantee). After a cap only deterministic hints remain (fallback by design). |
 | Idle flush | `llm_flush_idle_seconds=20`, `llm_flush_min_words=12` (0 s disables) | Speech followed by a pause is analysed without waiting for the next segment; still subject to the minimum interval and both caps. |
 | Context | `transcript_window_size=8`, segments cut to 300 chars, no speaker ids in prompt | Input tokens scale linearly with window. |
+| Prompt format | Short aliases `s1…`/`a1…` instead of UUID and long agenda ids (mapped back in code), compact response keys `t,a,m,e,c`, at most 2 hints of ≤20 words | Ids and verbose JSON were a large share of tokens; output was 59% of a call's cost. |
+| Repeat avoidance | `Shown: <type> <alias>` line lists hints still inside the cooldown | Two of four calls in one session paid for a hint that was then suppressed. Not yet confirmed on a live call. |
 | Output | `llm_max_output_tokens=250` | JSON array of ≤ a few short hints. |
 | Rolling summary | `summary_interval=10000` (off) | Its own LLM calls; the 8-segment window suffices for hints. Re-enable only if evaluation shows lost context. |
-| Dedup | Same hint type+item suppressed for 120 s | Avoids paying for and showing repeated hints. |
+| Dedup | Same hint type+item suppressed for 120 s; time warnings for the same item at most every 300 s | Avoids paying for and showing repeated hints. |
 | Accounting | `UsageMeter` (`server/core/cost.py`) logs per-call and per-session tokens and estimated USD | Source for the cost metric; prices hardcoded with source/date. |
+
+### Results so far
+
+**Measured live sessions** (real API, `claude-haiku-5-5`, 2026-10-08; one session each, not statistics):
+
+| Session | Code state | Duration | LLM calls | Tokens in / out | Cost | Notes |
+|---|---|---|---|---|---|---|
+| `4fb003db` | gating + Haiku, verbose prompt, inline call | 57.8 s | 1 | 742 / 215 | $0.000182 | Call latency 1934 ms and it blocked the segment for 1935 ms. One hint: 215 output tokens. |
+| `54d48185` | + compact prompt, background call, idle flush | 185.2 s | 4 | 2758 / 276 | $0.000414 (≈ $0.008 per meeting-hour) | Segment processing 1–5 ms. Call latency 1.2–1.5 s. A one-hint answer is ~91 output tokens; an empty answer 4. Input grew 438 → 916 tokens as the window filled (2 → 8 segments). Calls 3 and 4 returned a hint that was suppressed as a repeat (fixed afterwards with the `Shown` line). |
+
+- The first version's ~$0.90 is user-reported and cannot be broken down (no logging then).
+- `thinking: disabled` + `effort: low` on Haiku 5.5 is accepted by the API (HTTP 200 in both sessions).
+- The two sessions differ in content and length, so 215 → 91 output tokens per hint is an observation, not a controlled comparison.
+
+**Offline replay estimates** (`docs/cost-replay-results.md`; fake LLM, simulated time, 5 synthetic scenarios, 52.9 simulated minutes, 374 final segments). Estimates only — never cite as measurements:
+
+| Config | LLM calls (of which rolling summary) | Est. $ per meeting-hour | Gating delay median / max |
+|---|---|---|---|
+| K0 first version (Sonnet 5.5, call per segment, window 20) | 409 (35) | 2.24 – 5.69 | 0 / 0 s |
+| K1 = K0 with Haiku 5.5 | 409 (35) | 0.11 – 0.28 | 0 / 0 s |
+| K2 = K1 + gating (45 s, 50 words) | 101 (35) | 0.028 – 0.059 | 22 / 42 s |
+| K3 = K2 + window 8, thinking off, no rolling summary | 66 (0) | 0.0055 – 0.0134 | 22 / 42 s |
+| K4 current defaults | 66 (0) | 0.0055 – 0.0134 | 22 / 42 s |
+
+- The token estimator is a character-class heuristic calibrated on one real call (754 estimated vs 742 measured input tokens); error on other requests is unknown.
+- K0 comes out at ~7.1 hint calls per minute, consistent with the reconstruction that $0.90 corresponds to roughly 10–24 minutes of first-version testing.
+- Model price alone is a ×20 factor; gating cuts hint calls ×5.7 (374 → 66) but total calls only ×4.0 while the rolling summary is on, so the summary must be off (K3) for the full effect.
+- K3 and K4 are identical in the replay because all profiles use the current prompt format; the replay cannot show the compact-prompt effect in tokens. Gating delay excludes model latency.
+- The live session (≈ $0.008/h) falls inside the replay's K4 range. Both are under the project target of $0.02 per meeting-hour; the 42 s maximum gating delay is under the 60 s target.
+
+**Hypothesis status** (details in `docs/challenge-llm-cost-optimization.md`): none is confirmed. Cost-side evidence supports H1 (call reduction) and H4 (cost/latency trade-off) directionally; the quality side of H1 and H2, and H3 in tokens, need the paid run (WP4). Hint and summary quality have not been measured at all.
 
 ### Considered and not applied (record the reasoning in the thesis)
 - **Prompt caching:** static prefix (system prompt + agenda) is ~300–500 tokens, near or under the 512-token minimum, and Haiku input is already $0.10/MTok; savings would be fractions of a cent per session. Revisit only if the prefix grows (e.g., long agenda descriptions) — keep stable content first, volatile transcript last (already the case) and verify via `usage.cache_read_input_tokens`.
@@ -160,6 +209,7 @@ Sources: [Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [O
 ### Thesis challenge and offline evaluation
 - The problem, cost model, hypotheses H1–H5, ablation configs K0–K4 and work packages are in `docs/challenge-llm-cost-optimization.md` (Ukrainian). Keep it and this section consistent.
 - Offline, zero-cost comparison of configurations: `server/.venv/bin/python -m server.eval.cost_replay --markdown docs/cost-replay-results.md` replays synthetic Ukrainian scenarios (`server/eval/scenarios.py`) through the real orchestrator with a fake LLM and simulated time. Its token numbers are **estimates** (heuristic calibrated on one real call), it measures no hint quality, and it must never be cited as a measurement.
+- Work packages: WP1 compact prompt, WP2 background call + idle flush + budget caps, WP3 offline replay — done. WP4 (paid real evaluation with labelled scenarios; Batch API applies) and WP5 (LLM decides the active agenda item in the same hint call) — not started.
 - A paid real evaluation run (WP4) needs the user's explicit approval of the API budget first.
 
 ### Hypotheses to test in Phase 5 (do not state as results)
@@ -171,7 +221,7 @@ Sources: [Pricing](https://platform.claude.com/docs/en/about-claude/pricing), [O
 ### Rules when changing LLM code
 - Check `docs.anthropic.com` pricing/caching pages before quoting any price; never reuse numbers from memory. Update the date above when re-verified.
 - Any new LLM call must go through `HintGenerator.complete(...)` (shared client, circuit breaker and `UsageMeter`, so it is metered and capped), use bounded input, an explicit `max_tokens`, and `_CHEAP_REQUEST_OPTIONS` unless a measurement justifies reasoning.
-- End-of-meeting report: one call per meeting, gated by `summary_llm_enabled`, `summary_min_words`, the session cost cap, `summary_max_input_chars` (40k; longer transcripts lose the middle and the report is flagged `truncated`) and `summary_max_output_tokens` (700). Its cost and quality are not yet measured.
+- End-of-meeting report: one call per meeting, gated by `summary_llm_enabled`, `summary_min_words`, the session cost cap, `summary_max_input_chars` (40k; longer transcripts lose the middle and the report is flagged `truncated`) and `summary_max_output_tokens` (700). Its cost and quality are not yet measured on a live call (rough expectation: tens of thousands of input tokens per meeting-hour, i.e. a fraction of a cent on Haiku 5.5 — an estimate).
 - Do not log transcript text; log counts, token usage and cost only.
 - Operational backstop outside the code: set a monthly spend limit for the workspace in the Anthropic Console.
 

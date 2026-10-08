@@ -13,8 +13,8 @@
 
 - Дата прогону: 2026-10-08.
 - Команда: `server/.venv/bin/python -m server.eval.cost_replay --markdown docs/cost-replay-results.md`
-- Стан коду: гілка `feature/chrome-extension-ui`, коміт `f349aa2`, незакомічених змін у `server/`: 20 файл(ів).
-  SHA-256 (перші 12 символів) файлів на момент прогону: `server/agents/hint_generator.py` 22282cd1d427, `server/agents/orchestrator.py` a0ed293f1149, `server/config.py` 37cbb36fff54.
+- Стан коду: гілка `feature/chrome-extension-ui`, коміт `8c6bc05`, незакомічених змін у `server/`: 0 файл(ів).
+  SHA-256 (перші 12 символів) файлів на момент прогону: `server/agents/hint_generator.py` b8c3e40fe957, `server/agents/orchestrator.py` 28314512f3b4, `server/config.py` f9a299b33b7e.
 - Версія промпта: SHA-256 системного промпта підказок `9d0f805037f0` (поточний формат із
   псевдонімами `a1`/`s1`). Параметри запиту K4, які бачила заглушка: `{"model": "claude-haiku-5-5", "max_tokens": 250, "thinking": {"type": "disabled"}, "output_config": {"effort": "low"}}`.
 - Python 3.11.17; зовнішніх залежностей понад наявні в `server/.venv` немає.
