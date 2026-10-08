@@ -4,6 +4,7 @@ import { ThemeManager } from "../content/components/ThemeManager";
 import { MeetingSimulator } from "../mock/meeting-simulator";
 import { SCENARIOS, type ScenarioName } from "../mock/scenarios";
 import { CaptureState } from "../types/meeting";
+import type { MeetingReport, MeetingStats } from "../types/summary";
 
 let host: ShadowHost | null = null;
 let overlay: OverlayContainer | null = null;
@@ -35,7 +36,12 @@ function mountOverlay() {
   host = new ShadowHost("open");
   overlay = new OverlayContainer({
     onDismissHint: (id) => console.log("Dismissed hint:", id),
-    onStopCapture: () => stopPlayback(),
+    onStopCapture: () => {
+      stopPlayback();
+      overlay?.setCaptureState(CaptureState.Stopped);
+      playMockSummary();
+    },
+    onStartCapture: () => startPlayback(),
   });
   host.mount(overlay.root);
 
@@ -78,6 +84,49 @@ function pausePlayback() {
   if (timerInterval) clearInterval(timerInterval);
 }
 
+const MOCK_STATS: MeetingStats = {
+  durationSeconds: 1284,
+  finalSegments: 142,
+  totalWords: 1630,
+  hintsShown: 4,
+  speakers: [
+    { speakerId: "Olena Kovalenko", segments: 61, words: 742, share: 0.4552 },
+    { speakerId: "local-user", segments: 48, words: 566, share: 0.3472 },
+    { speakerId: "Taras Shevchuk", segments: 33, words: 322, share: 0.1975 },
+  ],
+  agenda: [
+    { itemId: "a1", title: "Sprint results", status: "covered", elapsedSeconds: 412, estimatedMinutes: 5, segments: 50, words: 590, share: 0.362 },
+    { itemId: "a2", title: "Release plan and risks for the mobile application", status: "active", elapsedSeconds: 731, estimatedMinutes: 10, segments: 78, words: 905, share: 0.5552 },
+    { itemId: "a3", title: "Hiring", status: "pending", elapsedSeconds: 0, segments: 0, words: 0, share: 0 },
+    { itemId: null, title: "Outside the agenda", status: "none", elapsedSeconds: 0, segments: 14, words: 135, share: 0.0828 },
+  ],
+};
+
+const MOCK_REPORT: MeetingReport = {
+  source: "llm",
+  summary:
+    "The team reviewed sprint results and discussed the release plan. The release is moved by one week because of open payment bugs; hiring was not discussed.",
+  keyPoints: [
+    "Sprint goal was met except for the payment flow.",
+    "Two blocking bugs remain in the mobile checkout.",
+  ],
+  decisions: ["Move the release to next Thursday."],
+  actionItems: [
+    { task: "Fix the two checkout bugs", owner: "Taras Shevchuk" },
+    { task: "Update the release notes", owner: "You" },
+    { task: "Schedule a separate call about hiring", owner: null },
+  ],
+  openQuestions: ["Who signs off the release if QA is not finished?"],
+  truncated: false,
+};
+
+function playMockSummary() {
+  const base = { summary: "", coveredItems: [], missedItems: [] };
+  overlay?.showSummaryPending();
+  setTimeout(() => overlay?.showSummary({ ...base, stats: MOCK_STATS, pending: true }), 600);
+  setTimeout(() => overlay?.showSummary({ ...base, stats: MOCK_STATS, report: MOCK_REPORT }), 1800);
+}
+
 function stopPlayback() {
   if (!sim) return;
   isPlaying = false;
@@ -98,7 +147,11 @@ function applyTheme() {
   const isDark = darkToggle.checked;
   document.body.classList.toggle("light", !isDark);
   if (host) {
-    host.setDarkMode(isDark);
+    if (isDark) {
+      host.host.classList.add("dark");
+    } else {
+      host.host.classList.remove("dark");
+    }
   }
 }
 

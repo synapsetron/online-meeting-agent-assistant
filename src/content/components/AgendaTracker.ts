@@ -1,6 +1,7 @@
 import type { AgendaState } from "@/types/agenda";
 import { AgendaItemStatus } from "@/types/agenda";
 import { el, formatTime } from "../utils/dom";
+import { CollapsibleSection } from "./CollapsibleSection";
 
 const STATUS_ICONS: Record<AgendaItemStatus, string> = {
   [AgendaItemStatus.Pending]: "",
@@ -12,63 +13,38 @@ const STATUS_ICONS: Record<AgendaItemStatus, string> = {
 
 export class AgendaTracker {
   readonly root: HTMLElement;
-  private section: HTMLElement;
-  private sectionContent: HTMLElement;
+  private section: CollapsibleSection;
   private progressBar: HTMLElement;
   private list: HTMLElement;
-  private badge: HTMLElement;
-  private chevron: HTMLElement;
-  private isOpen = true;
   private timerInterval: ReturnType<typeof setInterval> | null = null;
   private activeTimeEl: HTMLElement | null = null;
   private activeStartTime = 0;
   private activeElapsed = 0;
+  private activeItemId: string | null = null;
 
   constructor() {
-    this.chevron = el("span", { className: "ma-section-chevron open", textContent: "▸" });
-    this.badge = el("span", { className: "ma-section-badge", textContent: "0/0" });
-
-    const header = el("div", {
-      className: "ma-section-header",
-      role: "button",
-      tabindex: "0",
-      "aria-expanded": "true",
-      "aria-label": "Agenda section",
-    }, [
-      this.chevron,
-      el("span", { className: "ma-section-title", textContent: "Agenda" }),
-      this.badge,
-    ]);
-
-    header.addEventListener("click", () => this.toggle());
-    header.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        this.toggle();
-      }
-    });
+    this.section = new CollapsibleSection("Agenda", "Agenda section");
 
     this.progressBar = el("div", { className: "ma-progress-bar" });
     this.list = el("ul", { className: "ma-agenda-list" });
 
-    this.sectionContent = el("div", { className: "ma-section-content" }, [
-      this.progressBar,
-      this.list,
-    ]);
+    this.section.content.appendChild(this.progressBar);
+    this.section.content.appendChild(this.list);
 
-    this.section = el("div", { className: "ma-section" }, [header, this.sectionContent]);
-    this.root = this.section;
+    this.root = this.section.root;
   }
 
-  private toggle() {
-    this.isOpen = !this.isOpen;
-    this.chevron.className = `ma-section-chevron${this.isOpen ? " open" : ""}`;
-    this.sectionContent.className = `ma-section-content${this.isOpen ? "" : " closed"}`;
-    const header = this.section.querySelector(".ma-section-header");
-    header?.setAttribute("aria-expanded", String(this.isOpen));
+  private currentElapsed(): number {
+    return this.activeElapsed + Math.floor((Date.now() - this.activeStartTime) / 1000);
   }
 
   update(state: AgendaState) {
+    // Keep the running local clock if the same item is still active and the
+    // server value is not ahead of it, so periodic syncs don't restart the timer.
+    const running = this.activeItemId !== null ? this.currentElapsed() : 0;
+    const previousId = this.activeItemId;
+    this.activeItemId = null;
+
     if (this.timerInterval) {
       clearInterval(this.timerInterval);
       this.timerInterval = null;
@@ -77,7 +53,7 @@ export class AgendaTracker {
     const covered = state.items.filter(
       (i) => i.status === AgendaItemStatus.Covered,
     ).length;
-    this.badge.textContent = `${covered}/${state.items.length}`;
+    this.section.setBadge(`${covered}/${state.items.length}`);
 
     this.progressBar.innerHTML = "";
     for (const item of state.items) {
@@ -102,9 +78,15 @@ export class AgendaTracker {
         title: item.description ?? item.title,
       });
 
+      const keepLocal =
+        item.status === AgendaItemStatus.Active &&
+        item.id === previousId &&
+        running >= item.elapsedSeconds;
+      const shown = keepLocal ? running : item.elapsedSeconds;
+
       const timeText =
         item.status === AgendaItemStatus.Active
-          ? formatTime(item.elapsedSeconds)
+          ? formatTime(shown)
           : item.elapsedSeconds > 0
             ? formatTime(item.elapsedSeconds)
             : item.estimatedMinutes
@@ -119,7 +101,8 @@ export class AgendaTracker {
       if (item.status === AgendaItemStatus.Active) {
         this.activeTimeEl = timeEl;
         this.activeStartTime = Date.now();
-        this.activeElapsed = item.elapsedSeconds;
+        this.activeElapsed = shown;
+        this.activeItemId = item.id;
       }
 
       const li = el("li", { className: `ma-agenda-item ${item.status}` }, [
@@ -134,8 +117,7 @@ export class AgendaTracker {
     if (this.activeTimeEl) {
       this.timerInterval = setInterval(() => {
         if (!this.activeTimeEl) return;
-        const extra = Math.floor((Date.now() - this.activeStartTime) / 1000);
-        this.activeTimeEl.textContent = formatTime(this.activeElapsed + extra);
+        this.activeTimeEl.textContent = formatTime(this.currentElapsed());
       }, 1000);
     }
   }

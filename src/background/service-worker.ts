@@ -2,163 +2,262 @@ import type {
   PopupToBackground,
   ContentToBackground,
   BackgroundToPopup,
+  BackgroundToContent,
+  ClientToServer,
+  ServerToClient,
   OffscreenToServiceWorker,
 } from "@/types/messages";
-import { MeetingStatus, CaptureState, type MeetingInfo } from "@/types/meeting";
-import { AgendaItemStatus, type AgendaState } from "@/types/agenda";
-import type { Hint } from "@/types/hint";
-import type { TranscriptSegment } from "@/types/transcript";
+import { MeetingStatus, CaptureState } from "@/types/meeting";
+import { AgendaItemStatus } from "@/types/agenda";
+import { WebSocketClient, type ConnectionState } from "@/shared/websocket-client";
+import { DEFAULT_WS_URL } from "@/shared/constants";
 
-const OFFSCREEN_URL = "src/offscreen/offscreen.html";
+import { createSessionState, pushTranscript, pushHint } from "./session-state";
+import { startTabCapture, stopTabCapture } from "./tab-capture";
 
-const state = {
-  meeting: {
-    id: "meeting-001",
-    title: "Thesis progress meeting",
-    startTime: Date.now(),
-    participants: ["Olena K.", "Dmytro S.", "Prof. Ivanov"],
-    status: MeetingStatus.Connected,
-    captureState: CaptureState.Idle,
-  } as MeetingInfo,
+// ---- Session state ----
 
-  agenda: {
-    items: [
-      { id: "1", title: "Project overview", status: AgendaItemStatus.Pending, estimatedMinutes: 5, elapsedSeconds: 0, evidence: [], order: 1 },
-      { id: "2", title: "Architecture review", status: AgendaItemStatus.Pending, estimatedMinutes: 10, elapsedSeconds: 0, evidence: [], order: 2 },
-      { id: "3", title: "ASR integration", status: AgendaItemStatus.Pending, estimatedMinutes: 8, elapsedSeconds: 0, evidence: [], order: 3 },
-      { id: "4", title: "Evaluation protocol", status: AgendaItemStatus.Pending, estimatedMinutes: 10, elapsedSeconds: 0, evidence: [], order: 4 },
-      { id: "5", title: "Timeline & milestones", status: AgendaItemStatus.Pending, estimatedMinutes: 5, elapsedSeconds: 0, evidence: [], order: 5 },
-      { id: "6", title: "Open questions", status: AgendaItemStatus.Pending, estimatedMinutes: 7, elapsedSeconds: 0, evidence: [], order: 6 },
-    ],
-    activeItemId: null,
-    startTime: Date.now(),
-    totalElapsedSeconds: 0,
-  } satisfies AgendaState,
+const state = createSessionState();
 
-  hints: [] as Hint[],
-  recentTranscript: [] as TranscriptSegment[],
-  tabCaptureActive: false,
-};
+// ---- Persist / restore agenda ----
 
-// ---------------------------------------------------------------------------
-// Offscreen document management
-// ---------------------------------------------------------------------------
-
-/**
- * Check whether an offscreen document already exists.
- */
-async function hasOffscreenDocument(): Promise<boolean> {
-  // chrome.offscreen.hasDocument is available since Chrome 150;
-  // fall back to checking via getContexts for older versions.
-  if (chrome.offscreen && typeof chrome.offscreen.hasDocument === "function") {
-    return chrome.offscreen.hasDocument();
+async function loadSavedAgenda(): Promise<void> {
+  try {
+    const result = await chrome.storage.local.get("agendaItems");
+    if (Array.isArray(result.agendaItems) && result.agendaItems.length > 0) {
+      state.agenda.items = result.agendaItems.map((item: { id: string; title: string; description?: string; estimatedMinutes?: number }, i: number) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        status: AgendaItemStatus.Pending,
+        estimatedMinutes: item.estimatedMinutes,
+        elapsedSeconds: 0,
+        evidence: [],
+        order: i + 1,
+      }));
+    }
+  } catch {
+    // storage unavailable — keep empty agenda
   }
-
-  // Fallback: use runtime.getContexts (Chrome 116+)
-  if (chrome.runtime.getContexts) {
-    const contexts = await chrome.runtime.getContexts({
-      contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-      documentUrls: [chrome.runtime.getURL(OFFSCREEN_URL)],
-    });
-    return contexts.length > 0;
-  }
-
-  return false;
 }
 
-/**
- * Ensure an offscreen document is created for audio processing.
- */
-async function ensureOffscreenDocument(): Promise<void> {
-  if (await hasOffscreenDocument()) {
-    return;
-  }
+loadSavedAgenda();
 
-  await chrome.offscreen.createDocument({
-    url: OFFSCREEN_URL,
-    reasons: [chrome.offscreen.Reason.USER_MEDIA],
-    justification: "Processing tab audio capture for meeting transcription",
+// ---- Configurable settings ----
+
+async function getBackendUrl(): Promise<string> {
+  try {
+    const result = await chrome.storage.local.get("backendUrl");
+    return (result.backendUrl as string) || DEFAULT_WS_URL;
+  } catch {
+    return DEFAULT_WS_URL;
+  }
+}
+
+// ---- WebSocket client ----
+
+let wsClient: WebSocketClient | null = null;
+let wsCleanups: (() => void)[] = [];
+
+function getWsClient(): WebSocketClient {
+  if (!wsClient) {
+    wsClient = new WebSocketClient();
+  }
+  return wsClient;
+}
+
+// ---- Broadcast to content scripts ----
+
+function broadcastToContentScripts(message: BackgroundToContent): void {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      if (tab.id !== undefined) {
+        chrome.tabs.sendMessage(tab.id, message).catch(() => {});
+      }
+    }
   });
 }
 
-/**
- * Close the offscreen document if it exists.
- */
-async function closeOffscreenDocument(): Promise<void> {
-  if (await hasOffscreenDocument()) {
-    await chrome.offscreen.closeDocument();
+// ---- Handle incoming WebSocket messages ----
+
+function handleServerMessage(data: unknown): void {
+  const message = data as ServerToClient;
+
+  switch (message.type) {
+    case "SESSION_ACK":
+      state.sessionId = message.sessionId;
+      state.meeting.status = MeetingStatus.Connected;
+      console.log("[ServiceWorker] Session established:", message.sessionId);
+      break;
+
+    case "NEW_TRANSCRIPT":
+      if (message.segment.isFinal) {
+        pushTranscript(state, message.segment);
+      }
+      broadcastToContentScripts({
+        type: "NEW_TRANSCRIPT",
+        segment: message.segment,
+      });
+      break;
+
+    case "NEW_HINT":
+      pushHint(state, message.hint);
+      broadcastToContentScripts({
+        type: "NEW_HINT",
+        hint: message.hint,
+      });
+      break;
+
+    case "AGENDA_UPDATE":
+      state.agenda = message.agenda;
+      broadcastToContentScripts({
+        type: "AGENDA_UPDATE",
+        agenda: message.agenda,
+      });
+      break;
+
+    case "STATE_UPDATE":
+      state.meeting = {
+        ...state.meeting,
+        ...message.meeting,
+        // Preserve locally-managed fields that the backend doesn't track
+        startTime: state.meeting.startTime,
+        captureState: state.meeting.captureState,
+        status: state.meeting.status,
+      };
+      state.agenda = message.agenda;
+      if (message.hints) state.hints = message.hints;
+      if (message.recentTranscript) state.recentTranscript = message.recentTranscript;
+      broadcastToContentScripts({
+        type: "STATE_UPDATE",
+        meeting: state.meeting,
+        agenda: state.agenda,
+        hints: message.hints,
+        recentTranscript: message.recentTranscript,
+      });
+      break;
+
+    case "CAPTURE_STATE":
+      state.meeting.captureState = message.captureState;
+      broadcastToContentScripts({
+        type: "CAPTURE_STATE",
+        captureState: message.captureState,
+      });
+      break;
+
+    case "MEETING_SUMMARY":
+      state.meeting.status = MeetingStatus.Ended;
+      state.meeting.captureState = CaptureState.Stopped;
+      broadcastToContentScripts({
+        type: "MEETING_SUMMARY",
+        summary: message.summary,
+        coveredItems: message.coveredItems,
+        missedItems: message.missedItems,
+        stats: message.stats,
+        report: message.report,
+        pending: message.pending,
+      });
+      // With pending=true the AI report is still being written; keep the socket open.
+      if (!message.pending) finishDisconnect();
+      break;
+
+    case "ERROR":
+      console.error("[ServiceWorker] Server error:", message.message);
+      break;
+
+    default:
+      console.warn("[ServiceWorker] Unknown message type:", (message as { type: string }).type);
   }
 }
 
-// ---------------------------------------------------------------------------
-// Tab capture management
-// ---------------------------------------------------------------------------
+// ---- Start/stop WebSocket connection ----
 
-/**
- * Start capturing audio from the active tab.
- *
- * 1. Creates an offscreen document (if not already present)
- * 2. Gets a media stream ID from tabCapture
- * 3. Sends the stream ID to the offscreen document for processing
- *
- * If tabCapture fails, logs the error and returns false so the caller
- * can fall back to microphone-only mode (Web Speech API).
- */
-async function startTabCapture(): Promise<boolean> {
+async function getApiKey(): Promise<string> {
   try {
-    // Step 1: Ensure offscreen document exists
-    await ensureOffscreenDocument();
-
-    // Step 2: Get media stream ID for the active tab
-    const streamId = await chrome.tabCapture.getMediaStreamId({});
-
-    // Step 3: Send stream ID to offscreen document
-    await chrome.runtime.sendMessage({
-      type: "START_TAB_CAPTURE",
-      streamId,
-    });
-
-    state.tabCaptureActive = true;
-    console.log("[Service Worker] Tab capture initiated, stream ID sent to offscreen document");
-    return true;
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Unknown tab capture error";
-    console.warn(
-      "[Service Worker] Tab capture failed, falling back to microphone-only mode:",
-      message,
-    );
-    // Clean up offscreen document if capture failed
-    await closeOffscreenDocument().catch(() => {});
-    state.tabCaptureActive = false;
-    return false;
-  }
-}
-
-/**
- * Stop tab audio capture and clean up resources.
- */
-async function stopTabCapture(): Promise<void> {
-  if (!state.tabCaptureActive) {
-    return;
-  }
-
-  try {
-    // Tell offscreen document to stop capture
-    await chrome.runtime.sendMessage({ type: "STOP_TAB_CAPTURE" });
+    const result = await chrome.storage.local.get("anthropicApiKey");
+    return (result.anthropicApiKey as string) || "";
   } catch {
-    // Offscreen document may already be closed
+    return "";
   }
-
-  // Close the offscreen document
-  await closeOffscreenDocument().catch(() => {});
-  state.tabCaptureActive = false;
-  console.log("[Service Worker] Tab capture stopped");
 }
 
-// ---------------------------------------------------------------------------
-// Message handling
-// ---------------------------------------------------------------------------
+async function startConnection(): Promise<void> {
+  clearPendingDisconnect();
+  const url = await getBackendUrl();
+  const apiKey = await getApiKey();
+  const client = getWsClient();
+  client.setUrl(url);
+
+  for (const cleanup of wsCleanups) cleanup();
+  wsCleanups = [];
+
+  wsCleanups.push(
+    client.onStateChange((connectionState: ConnectionState) => {
+      switch (connectionState) {
+        case "connecting":
+        case "reconnecting":
+          state.meeting.status = MeetingStatus.Connecting;
+          break;
+        case "connected":
+          state.meeting.status = MeetingStatus.Connected;
+          break;
+        case "disconnected":
+          if (state.meeting.captureState === CaptureState.Capturing) {
+            state.meeting.status = MeetingStatus.Disconnected;
+          }
+          break;
+      }
+    }),
+  );
+
+  wsCleanups.push(client.onMessage(handleServerMessage));
+
+  const connectMsg: ClientToServer = {
+    type: "CONNECT",
+    meeting_id: state.meeting.id || `meeting-${Date.now()}`,
+    title: state.meeting.title || "Untitled Meeting",
+    agenda_items: state.agenda.items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      estimated_minutes: item.estimatedMinutes,
+    })),
+    participants: state.meeting.participants,
+    ...(apiKey ? { api_key: apiKey } : {}),
+  };
+
+  client.connect(connectMsg);
+}
+
+// Give the server time to answer AUDIO_STOP with MEETING_SUMMARY (statistics, then
+// the AI report: up to ~11 s to finish a hint call plus 20 s for the report).
+const SUMMARY_WAIT_MS = 35000;
+let pendingDisconnect: ReturnType<typeof setTimeout> | null = null;
+
+function clearPendingDisconnect(): void {
+  if (pendingDisconnect) {
+    clearTimeout(pendingDisconnect);
+    pendingDisconnect = null;
+  }
+}
+
+function finishDisconnect(): void {
+  clearPendingDisconnect();
+  wsClient?.disconnect();
+}
+
+function stopConnection(): void {
+  if (wsClient) {
+    wsClient.send({ type: "AUDIO_STOP" } as ClientToServer);
+    clearPendingDisconnect();
+    pendingDisconnect = setTimeout(finishDisconnect, SUMMARY_WAIT_MS);
+  }
+  state.meeting.captureState = CaptureState.Stopped;
+  state.meeting.status = MeetingStatus.Disconnected;
+  state.sessionId = null;
+}
+
+// ---- Message listener ----
 
 chrome.runtime.onMessage.addListener(
   (
@@ -178,54 +277,118 @@ chrome.runtime.onMessage.addListener(
         sendResponse(response);
         break;
       }
+
       case "TOGGLE_CAPTURE": {
         if (state.meeting.captureState === CaptureState.Capturing) {
-          state.meeting.captureState = CaptureState.Stopped;
-          // Stop tab capture asynchronously
-          stopTabCapture().catch((err) =>
-            console.warn("[Service Worker] Error stopping tab capture:", err),
+          stopConnection();
+          stopTabCapture(state).catch((err) =>
+            console.warn("[ServiceWorker] Error stopping tab capture:", err),
           );
+          broadcastToContentScripts({
+            type: "CAPTURE_STATE",
+            captureState: CaptureState.Stopped,
+          });
         } else {
+          if (!state.meeting.id) {
+            state.meeting.id = `meeting-${Date.now()}`;
+          }
+          if (!state.meeting.title) {
+            state.meeting.title = "Meeting";
+          }
+          if (state.agenda.items.length === 0) {
+            state.agenda.items = [
+              { id: "item-1", title: "General discussion", status: AgendaItemStatus.Pending, estimatedMinutes: 30, elapsedSeconds: 0, evidence: [], order: 1 },
+            ];
+          }
           state.meeting.captureState = CaptureState.Capturing;
+          state.meeting.status = MeetingStatus.Connecting;
           state.meeting.startTime = Date.now();
-          // Attempt tab capture; microphone-only (Web Speech API) continues
-          // regardless of whether this succeeds.
-          startTabCapture().catch((err) =>
-            console.warn("[Service Worker] Error starting tab capture:", err),
+          startConnection().catch((err) => {
+            console.error("[ServiceWorker] Failed to start connection:", err);
+          });
+          startTabCapture(state).catch((err) =>
+            console.warn("[ServiceWorker] Error starting tab capture:", err),
           );
+          broadcastToContentScripts({
+            type: "CAPTURE_STATE",
+            captureState: CaptureState.Capturing,
+          });
         }
         sendResponse({ captureState: state.meeting.captureState });
         break;
       }
+
       case "DISMISS_HINT": {
         const hint = state.hints.find((h) => h.id === message.hintId);
         if (hint) hint.dismissed = true;
+        if (wsClient) {
+          wsClient.send({ type: "DISMISS_HINT", hint_id: message.hintId } as ClientToServer);
+        }
         sendResponse({ ok: true });
         break;
       }
-      case "CONTENT_READY":
+
+      case "TRANSCRIPT_SEGMENT": {
+        if (wsClient) {
+          wsClient.send({ type: "TRANSCRIPT", segment: message.segment } as ClientToServer);
+        }
+        if (message.segment.isFinal) {
+          pushTranscript(state, message.segment);
+        }
         sendResponse({ ok: true });
         break;
+      }
+
+      case "CONTENT_READY":
+        broadcastToContentScripts({
+          type: "STATE_UPDATE",
+          meeting: state.meeting,
+          agenda: state.agenda,
+          hints: state.hints,
+          recentTranscript: state.recentTranscript,
+        });
+        sendResponse({ ok: true });
+        break;
+
+      case "UPDATE_AGENDA": {
+        state.agenda.items = message.items.map((item, i) => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          status: AgendaItemStatus.Pending,
+          estimatedMinutes: item.estimatedMinutes,
+          elapsedSeconds: 0,
+          evidence: [],
+          order: i + 1,
+        }));
+        chrome.storage.local.set({ agendaItems: message.items });
+        broadcastToContentScripts({ type: "AGENDA_UPDATE", agenda: state.agenda });
+        sendResponse({ ok: true });
+        break;
+      }
+
       case "UPDATE_SETTINGS":
         chrome.storage.local.set({ settings: message.settings });
         sendResponse({ ok: true });
         break;
 
-      // Messages from the offscreen document
       case "TAB_CAPTURE_STARTED":
-        console.log("[Service Worker] Offscreen document confirmed tab capture started");
+        console.log("[ServiceWorker] Offscreen confirmed tab capture started");
         sendResponse({ ok: true });
         break;
       case "TAB_CAPTURE_STOPPED":
         state.tabCaptureActive = false;
-        console.log("[Service Worker] Offscreen document confirmed tab capture stopped");
+        console.log("[ServiceWorker] Offscreen confirmed tab capture stopped");
         sendResponse({ ok: true });
         break;
       case "TAB_CAPTURE_ERROR":
         state.tabCaptureActive = false;
-        console.warn("[Service Worker] Tab capture error from offscreen:", message.error);
+        console.warn("[ServiceWorker] Tab capture error:", message.error);
         sendResponse({ ok: true });
         break;
+
+      default:
+        sendResponse({ ok: true });
     }
     return true;
   },

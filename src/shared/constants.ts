@@ -1,3 +1,6 @@
+export const DEFAULT_WS_URL = "ws://localhost:8000/ws";
+export const DEFAULT_SPEECH_LANGUAGE = "uk-UA";
+
 export const OVERLAY_WIDTH_DEFAULT = 360;
 export const OVERLAY_WIDTH_MIN = 300;
 export const OVERLAY_WIDTH_MAX = 480;

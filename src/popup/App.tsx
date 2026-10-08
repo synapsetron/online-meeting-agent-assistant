@@ -1,58 +1,55 @@
-import { useState, useEffect } from "react";
-import { MeetingStatus as MeetingStatusComponent } from "./components/MeetingStatus";
+import { useEffect, useState } from "react";
+import { MeetingStatus } from "./components/MeetingStatus";
 import { CaptureToggle } from "./components/CaptureToggle";
-import { AgendaOverview } from "./components/AgendaOverview";
-import { ConsentIndicator } from "./components/ConsentIndicator";
-import { MeetingStatus, CaptureState } from "@/types/meeting";
-import { AgendaItemStatus, type AgendaItem } from "@/types/agenda";
+import { AgendaEditor } from "./components/AgendaEditor";
+import { useTheme } from "@/shared/hooks/useTheme";
+import { useChromeState } from "@/shared/hooks/useChromeState";
+import { CaptureState } from "@/types/meeting";
+import type { BackgroundToContent, PopupToBackground } from "@/types/messages";
 import "./popup.css";
 
-const MOCK_AGENDA: AgendaItem[] = [
-  { id: "1", title: "Project overview", status: AgendaItemStatus.Covered, estimatedMinutes: 5, elapsedSeconds: 312, evidence: [], order: 1 },
-  { id: "2", title: "Architecture review", status: AgendaItemStatus.Active, estimatedMinutes: 10, elapsedSeconds: 445, evidence: [], order: 2 },
-  { id: "3", title: "ASR integration", status: AgendaItemStatus.Pending, estimatedMinutes: 8, elapsedSeconds: 0, evidence: [], order: 3 },
-  { id: "4", title: "Evaluation protocol", status: AgendaItemStatus.Pending, estimatedMinutes: 10, elapsedSeconds: 0, evidence: [], order: 4 },
-  { id: "5", title: "Timeline & milestones", status: AgendaItemStatus.Pending, estimatedMinutes: 5, elapsedSeconds: 0, evidence: [], order: 5 },
-  { id: "6", title: "Open questions", status: AgendaItemStatus.Pending, estimatedMinutes: 7, elapsedSeconds: 0, evidence: [], order: 6 },
-];
+type PopupView = "main" | "agenda";
 
+/**
+ * Minimal launcher. The full UI (agenda, hints, transcript, quick settings)
+ * lives in the overlay injected into the Google Meet page.
+ */
 export function App() {
-  const [meetingStatus, setMeetingStatus] = useState(MeetingStatus.Connected);
-  const [captureState, setCaptureState] = useState(CaptureState.Capturing);
-  const [meetingTitle] = useState("Thesis progress meeting");
-  const [startTime] = useState(Date.now() - 757_000);
-  const [agendaItems] = useState(MOCK_AGENDA);
+  useTheme();
+  const { meetingStatus, captureState, meetingTitle, startTime, agendaItems, refresh } =
+    useChromeState();
+  const [view, setView] = useState<PopupView>("main");
 
-  const [isDark, setIsDark] = useState(
-    window.matchMedia("(prefers-color-scheme: dark)").matches,
-  );
-
+  // Opening the popup brings back an overlay the user closed on the Meet tab.
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e: MediaQueryListEvent) => setIsDark(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+    chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(([tab]) => {
+        if (tab?.id !== undefined) {
+          chrome.tabs
+            .sendMessage(tab.id, { type: "SHOW_OVERLAY" } satisfies BackgroundToContent)
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
+  const isCapturing = captureState === CaptureState.Capturing;
 
   const handleToggleCapture = () => {
-    if (captureState === CaptureState.Capturing) {
-      setCaptureState(CaptureState.Stopped);
-      setMeetingStatus(MeetingStatus.Ended);
-    } else {
-      setCaptureState(CaptureState.Capturing);
-      setMeetingStatus(MeetingStatus.Connected);
-    }
+    chrome.runtime.sendMessage(
+      { type: "TOGGLE_CAPTURE" } as PopupToBackground,
+      () => refresh(),
+    );
   };
 
-  const handleOpenSettings = () => {
-    if (typeof chrome !== "undefined" && chrome.runtime?.openOptionsPage) {
-      chrome.runtime.openOptionsPage();
-    }
-  };
+  if (view === "agenda") {
+    return (
+      <div className="popup-container">
+        <AgendaEditor onClose={() => { setView("main"); refresh(); }} />
+      </div>
+    );
+  }
 
   return (
     <div className="popup-container">
@@ -63,7 +60,7 @@ export function App() {
         </div>
         <button
           className="popup-settings-btn"
-          onClick={handleOpenSettings}
+          onClick={() => chrome.runtime.openOptionsPage()}
           aria-label="Settings"
           title="Settings"
         >
@@ -71,9 +68,9 @@ export function App() {
         </button>
       </div>
 
-      <MeetingStatusComponent
+      <MeetingStatus
         status={meetingStatus}
-        title={meetingTitle}
+        title={meetingTitle || "Meeting"}
         startTime={startTime}
       />
 
@@ -82,9 +79,18 @@ export function App() {
         onToggle={handleToggleCapture}
       />
 
-      <AgendaOverview items={agendaItems} />
+      <button
+        className="popup-link-btn"
+        onClick={() => setView("agenda")}
+        disabled={isCapturing}
+        title={isCapturing ? "Stop capture to edit the agenda" : undefined}
+      >
+        Edit agenda ({agendaItems.length})
+      </button>
 
-      <ConsentIndicator />
+      <p className="capture-hint">
+        Agenda, hints and transcript are shown in the panel on the Google Meet page.
+      </p>
     </div>
   );
 }

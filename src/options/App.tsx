@@ -1,27 +1,45 @@
 import { useState, useEffect, useCallback } from "react";
-import { loadSettings, saveSettings, type UserSettings } from "@/shared/storage";
+import { loadSettings, saveSettings, isExtensionContext, type UserSettings } from "@/shared/storage";
+import { DEFAULT_WS_URL, DEFAULT_SPEECH_LANGUAGE } from "@/shared/constants";
+import { useTheme } from "@/shared/hooks/useTheme";
 import "./options.css";
 
+const SPEECH_LANGUAGES = [
+  { value: "uk-UA", label: "Ukrainian (Українська)" },
+  { value: "en-US", label: "English (US)" },
+  { value: "en-GB", label: "English (UK)" },
+  { value: "de-DE", label: "German (Deutsch)" },
+  { value: "fr-FR", label: "French (Français)" },
+  { value: "pl-PL", label: "Polish (Polski)" },
+] as const;
+
 export function App() {
+  useTheme();
+
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [savedVisible, setSavedVisible] = useState(false);
-  const [showApiKeys, setShowApiKeys] = useState(false);
-
-  const [isDark, setIsDark] = useState(
-    window.matchMedia("(prefers-color-scheme: dark)").matches,
-  );
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [backendUrl, setBackendUrl] = useState(DEFAULT_WS_URL);
+  const [speechLanguage, setSpeechLanguage] = useState(DEFAULT_SPEECH_LANGUAGE);
+  const [userName, setUserName] = useState("");
+  const [apiKey, setApiKey] = useState("");
 
   useEffect(() => {
     loadSettings().then(setSettings);
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e: MediaQueryListEvent) => setIsDark(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+    if (isExtensionContext()) {
+      chrome.storage.local.get(["backendUrl", "speechLanguage", "anthropicApiKey", "userName"]).then((result) => {
+        if (result.backendUrl) setBackendUrl(result.backendUrl as string);
+        if (result.speechLanguage) setSpeechLanguage(result.speechLanguage as string);
+        if (result.userName) setUserName(result.userName as string);
+        if (result.anthropicApiKey) setApiKey(result.anthropicApiKey as string);
+      });
+    }
   }, []);
 
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
+  const showSaved = useCallback(() => {
+    setSavedVisible(true);
+    setTimeout(() => setSavedVisible(false), 2000);
+  }, []);
 
   const update = useCallback(
     (partial: Partial<UserSettings>) => {
@@ -29,10 +47,42 @@ export function App() {
       const next = { ...settings, ...partial };
       setSettings(next);
       saveSettings(partial);
-      setSavedVisible(true);
-      setTimeout(() => setSavedVisible(false), 2000);
+      showSaved();
     },
-    [settings],
+    [settings, showSaved],
+  );
+
+  const handleBackendUrlChange = useCallback(
+    (url: string) => {
+      setBackendUrl(url);
+      if (isExtensionContext()) {
+        chrome.storage.local.set({ backendUrl: url });
+      }
+      showSaved();
+    },
+    [showSaved],
+  );
+
+  const handleUserNameChange = useCallback(
+    (name: string) => {
+      setUserName(name);
+      if (isExtensionContext()) {
+        chrome.storage.local.set({ userName: name.trim() });
+      }
+      showSaved();
+    },
+    [showSaved],
+  );
+
+  const handleSpeechLanguageChange = useCallback(
+    (lang: string) => {
+      setSpeechLanguage(lang);
+      if (isExtensionContext()) {
+        chrome.storage.local.set({ speechLanguage: lang });
+      }
+      showSaved();
+    },
+    [showSaved],
   );
 
   if (!settings) return null;
@@ -47,54 +97,97 @@ export function App() {
         </span>
       </div>
 
-      {/* API Keys */}
       <div className="options-section">
-        <h2 className="options-section-title">API Configuration</h2>
-
+        <h2 className="options-section-title">Backend Connection</h2>
         <div className="options-field">
-          <label className="options-label">ASR API Key</label>
-          <div style={{ position: "relative" }}>
-            <input
-              className="options-input"
-              type={showApiKeys ? "text" : "password"}
-              placeholder="sk-..."
-              readOnly
-              value=""
-            />
-          </div>
-          <p className="options-desc">Speech recognition provider API key (not yet connected)</p>
-        </div>
-
-        <div className="options-field">
-          <label className="options-label">LLM API Key</label>
+          <label className="options-label">WebSocket URL</label>
           <input
             className="options-input"
-            type={showApiKeys ? "text" : "password"}
-            placeholder="sk-ant-..."
-            readOnly
-            value=""
+            type="url"
+            placeholder={DEFAULT_WS_URL}
+            value={backendUrl}
+            onChange={(e) => handleBackendUrlChange(e.target.value)}
           />
-          <p className="options-desc">Language model API key for semantic analysis (not yet connected)</p>
+          <p className="options-desc">
+            The WebSocket endpoint of the meeting assistant backend server.
+            Default: {DEFAULT_WS_URL}
+          </p>
         </div>
-
-        <label className="options-checkbox-label" style={{ marginTop: 4 }}>
-          <input
-            type="checkbox"
-            checked={showApiKeys}
-            onChange={(e) => setShowApiKeys(e.target.checked)}
-          />
-          Show API keys
-        </label>
-
-        <p className="options-desc" style={{ marginTop: 8 }}>
-          🛡 Keys are stored locally in browser storage and never transmitted to third parties.
-        </p>
       </div>
 
-      {/* Language */}
       <div className="options-section">
-        <h2 className="options-section-title">Language</h2>
+        <h2 className="options-section-title">Speech Recognition</h2>
+        <div className="options-field">
+          <label className="options-label">Recognition language</label>
+          <select
+            className="options-select"
+            value={speechLanguage}
+            onChange={(e) => handleSpeechLanguageChange(e.target.value)}
+          >
+            {SPEECH_LANGUAGES.map((lang) => (
+              <option key={lang.value} value={lang.value}>
+                {lang.label}
+              </option>
+            ))}
+          </select>
+          <p className="options-desc">
+            Language used for speech recognition via the Web Speech API.
+            Choose the language spoken in your meetings.
+          </p>
+        </div>
+        <div className="options-field">
+          <label className="options-label">Your name</label>
+          <input
+            className="options-input"
+            type="text"
+            placeholder="Detected from Google Meet if empty"
+            value={userName}
+            onChange={(e) => handleUserNameChange(e.target.value)}
+          />
+          <p className="options-desc">
+            Shown in the transcript instead of "You" for your own speech.
+          </p>
+        </div>
+      </div>
 
+      <div className="options-section">
+        <h2 className="options-section-title">API Configuration</h2>
+        <div className="options-field">
+          <label className="options-label">Anthropic API Key</label>
+          <div className="options-api-key-row">
+            <input
+              className="options-input options-api-key-input"
+              type={showApiKey ? "text" : "password"}
+              placeholder="sk-ant-api03-..."
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                if (isExtensionContext()) {
+                  chrome.storage.local.set({ anthropicApiKey: e.target.value });
+                }
+                showSaved();
+              }}
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              className="options-api-key-toggle"
+              onClick={() => setShowApiKey(!showApiKey)}
+              type="button"
+            >
+              {showApiKey ? "Hide" : "Show"}
+            </button>
+          </div>
+          <p className="options-desc">
+            Required for AI-powered hints and meeting analysis.
+            Sent to the backend server at connection time.
+            {apiKey ? " Key is stored locally." : ""}
+          </p>
+        </div>
+      </div>
+
+      <div className="options-section">
+        <h2 className="options-section-title">Interface Language</h2>
         <div className="options-field">
           <label className="options-label">Primary meeting language</label>
           <select
@@ -109,10 +202,8 @@ export function App() {
         </div>
       </div>
 
-      {/* UI Preferences */}
       <div className="options-section">
         <h2 className="options-section-title">Interface</h2>
-
         <div className="options-field">
           <label className="options-label">Panel position</label>
           <select
@@ -124,7 +215,6 @@ export function App() {
             <option value="left">Left side</option>
           </select>
         </div>
-
         <div className="options-field">
           <label className="options-label">Theme</label>
           <div className="options-radio-group">
@@ -142,7 +232,6 @@ export function App() {
             ))}
           </div>
         </div>
-
         <div className="options-field">
           <label className="options-label">Font size</label>
           <div className="options-radio-group">
@@ -160,7 +249,6 @@ export function App() {
             ))}
           </div>
         </div>
-
         <div className="options-field">
           <label className="options-checkbox-label">
             <input
@@ -173,10 +261,8 @@ export function App() {
         </div>
       </div>
 
-      {/* Data Retention */}
       <div className="options-section">
         <h2 className="options-section-title">Data &amp; Privacy</h2>
-
         <div className="options-field">
           <label className="options-label">Transcript retention</label>
           <select
@@ -192,7 +278,6 @@ export function App() {
             <option value="30d">30 days</option>
           </select>
         </div>
-
         <div className="options-field">
           <label className="options-label">Storage usage</label>
           <div className="options-storage-bar">
@@ -200,14 +285,12 @@ export function App() {
           </div>
           <p className="options-desc">1.2 MB of 10 MB used (mock data)</p>
         </div>
-
         <div className="options-field">
           <button
             className="options-btn-danger"
             onClick={() => {
               if (confirm("Clear all stored data? This cannot be undone.")) {
-                setSavedVisible(true);
-                setTimeout(() => setSavedVisible(false), 2000);
+                showSaved();
               }
             }}
           >

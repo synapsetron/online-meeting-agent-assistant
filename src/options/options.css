@@ -1,43 +1,7 @@
-:root {
-  --opt-bg: #ffffff;
-  --opt-bg-secondary: #f8f9fa;
-  --opt-bg-tertiary: #f1f3f5;
-  --opt-text: #1a1a2e;
-  --opt-text-secondary: #6b7280;
-  --opt-text-tertiary: #9ca3af;
-  --opt-border: #e5e7eb;
-  --opt-accent: #3b82f6;
-  --opt-accent-light: #dbeafe;
-  --opt-success: #10b981;
-  --opt-danger: #ef4444;
-  --opt-danger-light: #fee2e2;
-}
-
-.dark {
-  --opt-bg: #1e1e2e;
-  --opt-bg-secondary: #262637;
-  --opt-bg-tertiary: #2e2e42;
-  --opt-text: #e4e4ed;
-  --opt-text-secondary: #9ca3af;
-  --opt-text-tertiary: #6b7280;
-  --opt-border: #3a3a4e;
-  --opt-accent: #60a5fa;
-  --opt-accent-light: #1e3a5f;
-  --opt-success: #34d399;
-  --opt-danger: #f87171;
-  --opt-danger-light: #3b1515;
-}
-
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+@import "../shared/styles/base.css";
 
 body {
-  font-family: "Google Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
-  background: var(--opt-bg-secondary);
-  color: var(--opt-text);
+  background: var(--ma-bg-secondary);
   min-height: 100vh;
 }
 
@@ -73,9 +37,9 @@ body {
 }
 
 .options-section {
-  background: var(--opt-bg);
+  background: var(--ma-bg);
   border-radius: 12px;
-  border: 1px solid var(--opt-border);
+  border: 1px solid var(--ma-border);
   padding: 20px;
   margin-bottom: 16px;
 }
@@ -85,7 +49,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--opt-text-secondary);
+  color: var(--ma-text-secondary);
   margin-bottom: 16px;
 }
 
@@ -103,41 +67,41 @@ body {
 .options-label {
   font-size: 14px;
   font-weight: 500;
-  color: var(--opt-text);
+  color: var(--ma-text);
 }
 
 .options-desc {
   font-size: 12px;
-  color: var(--opt-text-tertiary);
+  color: var(--ma-text-tertiary);
 }
 
 .options-input {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--opt-border);
+  border: 1px solid var(--ma-border);
   border-radius: 8px;
   font-size: 14px;
   font-family: "Google Sans Mono", monospace;
-  background: var(--opt-bg);
-  color: var(--opt-text);
+  background: var(--ma-bg);
+  color: var(--ma-text);
   transition: border-color 150ms;
 }
 
 .options-input:focus {
   outline: none;
-  border-color: var(--opt-accent);
-  box-shadow: 0 0 0 2px var(--opt-accent-light);
+  border-color: var(--ma-accent);
+  box-shadow: 0 0 0 2px var(--ma-accent-light);
 }
 
 .options-select {
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid var(--opt-border);
+  border: 1px solid var(--ma-border);
   border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
-  background: var(--opt-bg);
-  color: var(--opt-text);
+  background: var(--ma-bg);
+  color: var(--ma-text);
   cursor: pointer;
 }
 
@@ -152,7 +116,7 @@ body {
   gap: 6px;
   font-size: 14px;
   cursor: pointer;
-  color: var(--opt-text);
+  color: var(--ma-text);
 }
 
 .options-checkbox-label {
@@ -161,15 +125,15 @@ body {
   gap: 8px;
   font-size: 14px;
   cursor: pointer;
-  color: var(--opt-text);
+  color: var(--ma-text);
 }
 
 .options-btn-danger {
   padding: 8px 18px;
-  border: 1px solid var(--opt-danger);
+  border: 1px solid var(--ma-danger);
   border-radius: 8px;
   background: transparent;
-  color: var(--opt-danger);
+  color: var(--ma-danger);
   font-size: 14px;
   font-weight: 500;
   font-family: inherit;
@@ -178,13 +142,13 @@ body {
 }
 
 .options-btn-danger:hover {
-  background: var(--opt-danger-light);
+  background: var(--ma-danger-light);
 }
 
 .options-storage-bar {
   width: 100%;
   height: 6px;
-  background: var(--opt-bg-tertiary);
+  background: var(--ma-bg-tertiary);
   border-radius: 3px;
   overflow: hidden;
   margin-top: 8px;
@@ -193,7 +157,7 @@ body {
 .options-storage-fill {
   height: 100%;
   border-radius: 3px;
-  background: var(--opt-accent);
+  background: var(--ma-accent);
   transition: width 300ms;
 }
 
@@ -202,11 +166,40 @@ body {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: var(--opt-success);
+  color: var(--ma-success);
   opacity: 0;
   transition: opacity 300ms;
 }
 
 .options-saved.visible {
   opacity: 1;
+}
+
+.options-api-key-row {
+  display: flex;
+  gap: 8px;
+}
+
+.options-api-key-input {
+  flex: 1;
+  letter-spacing: 0.3px;
+}
+
+.options-api-key-toggle {
+  padding: 0 14px;
+  border: 1px solid var(--ma-border);
+  border-radius: 8px;
+  background: var(--ma-bg);
+  color: var(--ma-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 150ms, color 150ms;
+}
+
+.options-api-key-toggle:hover {
+  background: var(--ma-bg-tertiary);
+  color: var(--ma-text);
 }

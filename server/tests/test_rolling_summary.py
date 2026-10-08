@@ -5,14 +5,22 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from server.agents.orchestrator import Orchestrator, _SUMMARY_INTERVAL
+from server.agents.orchestrator import Orchestrator
+
+_SUMMARY_INTERVAL = 10
 from server.config import Config
 from server.core.state_store import MeetingStateStore
 from server.models import AgendaItem, TranscriptSegment
 
 
 def _make_config() -> Config:
-    return Config(anthropic_api_key="test-key", llm_debounce_seconds=0.0)
+    return Config(
+        anthropic_api_key="test-key",
+        llm_debounce_seconds=0.0,
+        llm_min_new_words=0,
+        summary_interval=_SUMMARY_INTERVAL,
+        llm_flush_idle_seconds=0.0,
+    )
 
 
 def _make_store() -> MeetingStateStore:
@@ -55,6 +63,9 @@ class TestRollingSummaryIntegration:
             # Let the background task complete
             if orch._summary_task is not None:
                 await orch._summary_task
+            # Hint calls run in the background: wait for the one in flight.
+            await orch.drain()
+            await orch.aclose()
 
         mock_summarize.assert_called_once()
         assert store.get_rolling_summary() == "Updated summary text"
@@ -75,6 +86,8 @@ class TestRollingSummaryIntegration:
         ):
             for i in range(_SUMMARY_INTERVAL - 1):
                 await orch.process_segment(_final_segment(i), store)
+            await orch.drain()
+            await orch.aclose()
 
         mock_summarize.assert_not_called()
         assert store.get_rolling_summary() == ""
@@ -109,6 +122,8 @@ class TestRollingSummaryIntegration:
 
             if orch._summary_task is not None:
                 await orch._summary_task
+            await orch.drain()
+            await orch.aclose()
 
         assert len(captured_segments) == _SUMMARY_INTERVAL
         ids = [s.id for s in captured_segments]

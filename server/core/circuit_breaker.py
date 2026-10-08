@@ -4,6 +4,8 @@ import enum
 import logging
 import time
 
+from server.core.logging_config import log_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,11 +63,7 @@ class CircuitBreaker:
         self._state = CircuitState.CLOSED
         self._consecutive_failures = 0
         if prev != CircuitState.CLOSED:
-            logger.info(
-                "[%s] Circuit closed after successful call (was %s)",
-                self._name,
-                prev.value,
-            )
+            log_event(logger, "circuit_closed", breaker=self._name, previous_state=prev.value)
 
     def record_failure(self) -> None:
         """Record a failed call.  Opens the breaker after threshold failures."""
@@ -76,15 +74,12 @@ class CircuitBreaker:
             prev = self._state
             self._state = CircuitState.OPEN
             if prev != CircuitState.OPEN:
-                logger.warning(
-                    "[%s] Circuit opened after %d consecutive failures",
-                    self._name,
-                    self._consecutive_failures,
+                log_event(
+                    logger, "circuit_opened", level=logging.WARNING,
+                    breaker=self._name, consecutive_failures=self._consecutive_failures,
+                    recovery_timeout_s=self._recovery_timeout,
                 )
         elif self._state == CircuitState.HALF_OPEN:
             # Trial call in half-open failed -> reopen
             self._state = CircuitState.OPEN
-            logger.warning(
-                "[%s] Circuit reopened after half-open trial failure",
-                self._name,
-            )
+            log_event(logger, "circuit_reopened", level=logging.WARNING, breaker=self._name)

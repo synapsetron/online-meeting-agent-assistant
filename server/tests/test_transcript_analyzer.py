@@ -68,3 +68,15 @@ class TestShortSegments:
         seg = _seg("seg-1", "hello")
         result = analyzer.analyze(seg, _agenda())
         assert len(result.matched_agenda_item_ids) == 0
+
+
+def test_inflected_ukrainian_title_matches() -> None:
+    from server.agents.transcript_analyzer import TranscriptAnalyzer
+    from server.models import AgendaItem, AgendaState, TranscriptSegment
+
+    agenda = AgendaState(items=[AgendaItem(id="w", title="Погода", order=1)])
+    seg = TranscriptSegment(
+        id="s", meeting_id="m", speaker_id="u", text="сьогодні гарну погоду обіцяли",
+        timestamp=1.0, is_final=True,
+    )
+    assert "w" in TranscriptAnalyzer().analyze(seg, agenda).matched_agenda_item_ids

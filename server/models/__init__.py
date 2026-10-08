@@ -15,6 +15,8 @@ from .messages import (
     StateUpdateMessage,
     DismissHintMessage,
     MeetingSummaryMessage,
+    TranscriptMessage,
+    TranscriptErrorMessage,
 )
 
 __all__ = [
@@ -28,4 +30,5 @@ __all__ = [
     "NewTranscriptMessage", "AgendaUpdateMessage",
     "NewHintMessage", "StateUpdateMessage",
     "DismissHintMessage", "MeetingSummaryMessage",
+    "TranscriptMessage", "TranscriptErrorMessage",
 ]
