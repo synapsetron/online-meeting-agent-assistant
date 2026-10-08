@@ -8,6 +8,7 @@ from .base import CamelModel
 from .agenda import AgendaItem, AgendaState
 from .hint import Hint
 from .meeting import CaptureState, MeetingInfo
+from .summary import MeetingReport, MeetingStats
 from .transcript import TranscriptSegment
 
 
@@ -94,6 +95,11 @@ class MeetingSummaryMessage(CamelModel):
     summary: str
     covered_items: list[str]
     missed_items: list[str]
+    stats: MeetingStats | None = None
+    report: MeetingReport | None = None
+    # True while the LLM report is still being generated; a second
+    # MEETING_SUMMARY with pending=False follows.
+    pending: bool = False
 
 
 class TranscriptErrorMessage(CamelModel):

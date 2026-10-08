@@ -695,3 +695,27 @@ body {
 .settings-full-btn:hover {
   opacity: 0.8;
 }
+
+/* ===== LAUNCHER LINK ===== */
+.popup-link-btn {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--ma-border, rgba(128, 128, 128, 0.3));
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ma-text-primary, inherit);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.popup-link-btn:hover:not(:disabled) {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.popup-link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -21,14 +21,16 @@ export function App() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [backendUrl, setBackendUrl] = useState(DEFAULT_WS_URL);
   const [speechLanguage, setSpeechLanguage] = useState(DEFAULT_SPEECH_LANGUAGE);
+  const [userName, setUserName] = useState("");
   const [apiKey, setApiKey] = useState("");
 
   useEffect(() => {
     loadSettings().then(setSettings);
     if (isExtensionContext()) {
-      chrome.storage.local.get(["backendUrl", "speechLanguage", "anthropicApiKey"]).then((result) => {
+      chrome.storage.local.get(["backendUrl", "speechLanguage", "anthropicApiKey", "userName"]).then((result) => {
         if (result.backendUrl) setBackendUrl(result.backendUrl as string);
         if (result.speechLanguage) setSpeechLanguage(result.speechLanguage as string);
+        if (result.userName) setUserName(result.userName as string);
         if (result.anthropicApiKey) setApiKey(result.anthropicApiKey as string);
       });
     }
@@ -55,6 +57,17 @@ export function App() {
       setBackendUrl(url);
       if (isExtensionContext()) {
         chrome.storage.local.set({ backendUrl: url });
+      }
+      showSaved();
+    },
+    [showSaved],
+  );
+
+  const handleUserNameChange = useCallback(
+    (name: string) => {
+      setUserName(name);
+      if (isExtensionContext()) {
+        chrome.storage.local.set({ userName: name.trim() });
       }
       showSaved();
     },
@@ -120,6 +133,19 @@ export function App() {
           <p className="options-desc">
             Language used for speech recognition via the Web Speech API.
             Choose the language spoken in your meetings.
+          </p>
+        </div>
+        <div className="options-field">
+          <label className="options-label">Your name</label>
+          <input
+            className="options-input"
+            type="text"
+            placeholder="Detected from Google Meet if empty"
+            value={userName}
+            onChange={(e) => handleUserNameChange(e.target.value)}
+          />
+          <p className="options-desc">
+            Shown in the transcript instead of "You" for your own speech.
           </p>
         </div>
       </div>

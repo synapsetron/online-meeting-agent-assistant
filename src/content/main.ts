@@ -2,8 +2,10 @@ import { ShadowHost } from "./shadow-host";
 import { OverlayContainer } from "./components/OverlayContainer";
 import { ThemeManager } from "./components/ThemeManager";
 import { SpeechRecognitionService } from "@/shared/speech-recognition";
+import { MeetCaptionObserver } from "@/shared/meet-captions";
 import { CaptureState } from "@/types/meeting";
 import type { BackgroundToContent, ContentToBackground, PopupToBackground } from "@/types/messages";
+import { resolveLocalUserName } from "@/shared/meet-user";
 import { getMeetingCode, observeCallState } from "@/shared/meet-detector";
 import { DEFAULT_SPEECH_LANGUAGE } from "@/shared/constants";
 
@@ -12,6 +14,7 @@ let host: ShadowHost | null = null;
 let overlay: OverlayContainer | null = null;
 let theme: ThemeManager | null = null;
 let speechService: SpeechRecognitionService | null = null;
+let captionObserver: MeetCaptionObserver | null = null;
 
 function sendToBackground(msg: ContentToBackground | PopupToBackground): void {
   try {
@@ -29,16 +32,22 @@ function startRecognition(language?: string) {
   const lang = language ?? DEFAULT_SPEECH_LANGUAGE;
   speechService = new SpeechRecognitionService(lang);
 
-  if (!speechService.isSupported()) {
-    console.warn("[Meeting Assistant] Web Speech API not supported in this browser");
-    return;
-  }
+  // Remote participants come from Meet captions, independent of Web Speech support.
+  startCaptionObserver();
 
   chrome.runtime.sendMessage({ type: "GET_STATE" } as PopupToBackground).then((response) => {
     if (response?.meeting?.id) {
       speechService?.setMeetingId(response.meeting.id);
+      captionObserver?.setMeetingId(response.meeting.id);
     }
   }).catch(() => {});
+
+  applyLocalUserName();
+
+  if (!speechService.isSupported()) {
+    console.warn("[Meeting Assistant] Web Speech API not supported in this browser");
+    return;
+  }
 
   speechService.onTranscript((segment) => {
     console.log("[Meeting Assistant] Transcript segment:", segment.text.substring(0, 50), "overlay:", !!overlay);
@@ -50,11 +59,50 @@ function startRecognition(language?: string) {
   console.log("[Meeting Assistant] Speech recognition started, language:", lang);
 }
 
+/** Meet may render the account name late, so retry for a short while. */
+function applyLocalUserName(attempt = 0) {
+  resolveLocalUserName().then((name) => {
+    if (name) {
+      speechService?.setSpeakerId(name);
+      captionObserver?.setLocalUserName(name);
+      console.log("[Meeting Assistant] Local user name:", name);
+    } else if (attempt < 10 && speechService) {
+      setTimeout(() => applyLocalUserName(attempt + 1), 3000);
+    }
+  });
+}
+
+function startCaptionObserver() {
+  if (captionObserver) {
+    captionObserver.stop();
+  }
+
+  captionObserver = new MeetCaptionObserver();
+  captionObserver.setSkipLocalUser(true);
+
+  captionObserver.onCaption((segment) => {
+    console.log("[Meeting Assistant] Caption from", segment.speakerId + ":", segment.text.substring(0, 50));
+    overlay?.addTranscript(segment);
+    sendToBackground({ type: "TRANSCRIPT_SEGMENT", segment });
+  });
+
+  captionObserver.start();
+  captionObserver.tryEnableCaptions();
+
+  console.log("[Meeting Assistant] Caption observer started for remote participants");
+}
+
 function stopRecognition() {
   if (speechService) {
     speechService.stop();
     speechService = null;
     console.log("[Meeting Assistant] Speech recognition stopped");
+  }
+
+  if (captionObserver) {
+    captionObserver.stop();
+    captionObserver = null;
+    console.log("[Meeting Assistant] Caption observer stopped");
   }
 }
 
@@ -72,6 +120,7 @@ function initOverlay() {
     onStopCapture: () => {
       stopRecognition();
       overlay?.setCaptureState(CaptureState.Stopped);
+      overlay?.showSummaryPending();
       sendToBackground({ type: "TOGGLE_CAPTURE" } as PopupToBackground);
     },
     onStartCapture: () => {
@@ -88,6 +137,7 @@ function initOverlay() {
     (message: BackgroundToContent, _sender, sendResponse) => {
       switch (message.type) {
         case "STATE_UPDATE":
+          overlay?.setCaptureState(message.meeting.captureState);
           overlay?.updateAgenda(message.agenda);
           if (message.hints) {
             for (const hint of message.hints) {
@@ -106,6 +156,10 @@ function initOverlay() {
         case "NEW_TRANSCRIPT":
           console.log("[Meeting Assistant] NEW_TRANSCRIPT from backend:", message.segment.text?.substring(0, 50));
           overlay?.addTranscript(message.segment);
+          break;
+
+        case "SHOW_OVERLAY":
+          overlay?.show();
           break;
 
         case "NEW_HINT":
@@ -131,9 +185,9 @@ function initOverlay() {
           break;
 
         case "MEETING_SUMMARY":
-          console.log("[Meeting Assistant] Meeting summary received:", message.summary);
           stopRecognition();
           overlay?.setCaptureState(CaptureState.Stopped);
+          overlay?.showSummary(message);
           break;
       }
       sendResponse({ ok: true });
@@ -147,6 +201,11 @@ function initOverlay() {
 
 function destroyOverlay() {
   stopRecognition();
+
+  if (captionObserver) {
+    captionObserver.stop();
+    captionObserver = null;
+  }
 
   overlay?.destroy();
   overlay = null;

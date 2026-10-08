@@ -57,6 +57,7 @@ async function getBackendUrl(): Promise<string> {
 // ---- WebSocket client ----
 
 let wsClient: WebSocketClient | null = null;
+let wsCleanups: (() => void)[] = [];
 
 function getWsClient(): WebSocketClient {
   if (!wsClient) {
@@ -152,7 +153,12 @@ function handleServerMessage(data: unknown): void {
         summary: message.summary,
         coveredItems: message.coveredItems,
         missedItems: message.missedItems,
+        stats: message.stats,
+        report: message.report,
+        pending: message.pending,
       });
+      // With pending=true the AI report is still being written; keep the socket open.
+      if (!message.pending) finishDisconnect();
       break;
 
     case "ERROR":
@@ -176,28 +182,35 @@ async function getApiKey(): Promise<string> {
 }
 
 async function startConnection(): Promise<void> {
+  clearPendingDisconnect();
   const url = await getBackendUrl();
   const apiKey = await getApiKey();
   const client = getWsClient();
   client.setUrl(url);
 
-  client.onStateChange((connectionState: ConnectionState) => {
-    switch (connectionState) {
-      case "connecting":
-      case "reconnecting":
-        state.meeting.status = MeetingStatus.Connecting;
-        break;
-      case "connected":
-        break;
-      case "disconnected":
-        if (state.meeting.captureState === CaptureState.Capturing) {
-          state.meeting.status = MeetingStatus.Disconnected;
-        }
-        break;
-    }
-  });
+  for (const cleanup of wsCleanups) cleanup();
+  wsCleanups = [];
 
-  client.onMessage(handleServerMessage);
+  wsCleanups.push(
+    client.onStateChange((connectionState: ConnectionState) => {
+      switch (connectionState) {
+        case "connecting":
+        case "reconnecting":
+          state.meeting.status = MeetingStatus.Connecting;
+          break;
+        case "connected":
+          state.meeting.status = MeetingStatus.Connected;
+          break;
+        case "disconnected":
+          if (state.meeting.captureState === CaptureState.Capturing) {
+            state.meeting.status = MeetingStatus.Disconnected;
+          }
+          break;
+      }
+    }),
+  );
+
+  wsCleanups.push(client.onMessage(handleServerMessage));
 
   const connectMsg: ClientToServer = {
     type: "CONNECT",
@@ -213,17 +226,31 @@ async function startConnection(): Promise<void> {
     ...(apiKey ? { api_key: apiKey } : {}),
   };
 
-  state.meeting.status = MeetingStatus.Connecting;
-  state.meeting.captureState = CaptureState.Capturing;
-  state.meeting.startTime = Date.now();
-
   client.connect(connectMsg);
+}
+
+// Give the server time to answer AUDIO_STOP with MEETING_SUMMARY (statistics, then
+// the AI report: up to ~11 s to finish a hint call plus 20 s for the report).
+const SUMMARY_WAIT_MS = 35000;
+let pendingDisconnect: ReturnType<typeof setTimeout> | null = null;
+
+function clearPendingDisconnect(): void {
+  if (pendingDisconnect) {
+    clearTimeout(pendingDisconnect);
+    pendingDisconnect = null;
+  }
+}
+
+function finishDisconnect(): void {
+  clearPendingDisconnect();
+  wsClient?.disconnect();
 }
 
 function stopConnection(): void {
   if (wsClient) {
     wsClient.send({ type: "AUDIO_STOP" } as ClientToServer);
-    wsClient.disconnect();
+    clearPendingDisconnect();
+    pendingDisconnect = setTimeout(finishDisconnect, SUMMARY_WAIT_MS);
   }
   state.meeting.captureState = CaptureState.Stopped;
   state.meeting.status = MeetingStatus.Disconnected;
@@ -273,6 +300,9 @@ chrome.runtime.onMessage.addListener(
               { id: "item-1", title: "General discussion", status: AgendaItemStatus.Pending, estimatedMinutes: 30, elapsedSeconds: 0, evidence: [], order: 1 },
             ];
           }
+          state.meeting.captureState = CaptureState.Capturing;
+          state.meeting.status = MeetingStatus.Connecting;
+          state.meeting.startTime = Date.now();
           startConnection().catch((err) => {
             console.error("[ServiceWorker] Failed to start connection:", err);
           });
@@ -332,6 +362,7 @@ chrome.runtime.onMessage.addListener(
           order: i + 1,
         }));
         chrome.storage.local.set({ agendaItems: message.items });
+        broadcastToContentScripts({ type: "AGENDA_UPDATE", agenda: state.agenda });
         sendResponse({ ok: true });
         break;
       }

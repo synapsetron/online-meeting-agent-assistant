@@ -54,6 +54,13 @@ def _tokenize(text: str) -> list[str]:
     return text.lower().split()
 
 
+def _word_in(word: str, normalized: str) -> bool:
+    # Crude stemming for inflected (e.g. Ukrainian) forms: "погода" ~ "погоду".
+    if word in normalized:
+        return True
+    return len(word) > 4 and word[:-2] in normalized
+
+
 def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text.lower().strip())
 
@@ -83,9 +90,10 @@ class TranscriptAnalyzer:
             title_lower = item.title.lower()
             title_words = _tokenize(item.title)
 
-            title_matched = (
-                title_lower in normalized
-                or all(w in normalized for w in title_words if len(w) > 2)
+            significant = [w for w in title_words if len(w) > 2]
+            hits = sum(1 for w in significant if _word_in(w, normalized))
+            title_matched = title_lower in normalized or (
+                bool(significant) and hits >= (len(significant) + 1) // 2
             )
 
             desc_matched = False
@@ -94,7 +102,7 @@ class TranscriptAnalyzer:
                     w for w in _tokenize(item.description) if len(w) > 3
                 ]
                 if desc_words:
-                    overlap = sum(1 for w in desc_words if w in normalized)
+                    overlap = sum(1 for w in desc_words if _word_in(w, normalized))
                     desc_matched = overlap >= max(1, len(desc_words) // 2)
 
             if title_matched or desc_matched:

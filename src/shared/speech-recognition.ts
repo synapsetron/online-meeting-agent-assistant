@@ -70,6 +70,7 @@ export class SpeechRecognitionService {
   private recognition: SpeechRecognitionInstance | null = null;
   private language: string;
   private meetingId = "";
+  private speakerId = DEFAULT_SPEAKER_ID;
   private isRunning = false;
   private shouldRestart = false;
   private segmentCounter = 0;
@@ -87,6 +88,10 @@ export class SpeechRecognitionService {
 
   setMeetingId(meetingId: string): void {
     this.meetingId = meetingId;
+  }
+
+  setSpeakerId(speakerId: string): void {
+    this.speakerId = speakerId || DEFAULT_SPEAKER_ID;
   }
 
   setLanguage(language: string): void {
@@ -229,7 +234,7 @@ export class SpeechRecognitionService {
       const segment: TranscriptSegment = {
         id: segmentId,
         meetingId: this.meetingId,
-        speakerId: DEFAULT_SPEAKER_ID,
+        speakerId: this.speakerId,
         text: alternative.transcript.trim(),
         timestamp: Date.now(),
         isFinal,

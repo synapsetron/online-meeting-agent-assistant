@@ -38,6 +38,7 @@ class MeetingStateStore:
         )
         self._all_segments: list[TranscriptSegment] = []
         self._hints: list[Hint] = []
+        self._segment_item: dict[str, str | None] = {}
         self._rolling_summary: str = ""
         self.window_size = window_size
 
@@ -47,6 +48,21 @@ class MeetingStateStore:
     def get_window(self) -> list[TranscriptSegment]:
         final = [s for s in self._all_segments if s.is_final]
         return final[-self.window_size :]
+
+    def get_final_segments(self) -> list[TranscriptSegment]:
+        """All final segments in arrival order, one per id (latest version wins)."""
+        latest: dict[str, TranscriptSegment] = {}
+        for seg in self._all_segments:
+            if seg.is_final:
+                latest[seg.id] = seg
+        return list(latest.values())
+
+    def tag_segment(self, segment_id: str, item_id: str | None) -> None:
+        """Remember which agenda item was active when a final segment arrived."""
+        self._segment_item[segment_id] = item_id
+
+    def get_segment_item(self, segment_id: str) -> str | None:
+        return self._segment_item.get(segment_id)
 
     def get_rolling_summary(self) -> str:
         return self._rolling_summary
@@ -85,6 +101,10 @@ class MeetingStateStore:
                 hint.dismissed = True
                 return True
         return False
+
+    @property
+    def hint_count(self) -> int:
+        return len(self._hints)
 
     def get_active_hints(self) -> list[Hint]:
         return [h for h in self._hints if not h.dismissed]

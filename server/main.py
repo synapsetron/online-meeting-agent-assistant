@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
-
 from dotenv import load_dotenv
 
 load_dotenv()
+
+from server.core.logging_config import configure_logging
+
+configure_logging()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,4 +36,6 @@ websocket.configure(session_manager, config)
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("server.main:app", host=config.host, port=config.port, reload=True)
+    uvicorn.run(
+        "server.main:app", host=config.host, port=config.port, reload=True, log_config=None
+    )

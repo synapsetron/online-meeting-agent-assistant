@@ -927,3 +927,121 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ===== MEETING SUMMARY ===== */
+.ma-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ma-summary-totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.ma-summary-total {
+  background: var(--ma-bg-secondary);
+  border-radius: var(--ma-radius-sm);
+  padding: 6px 4px;
+  text-align: center;
+}
+
+.ma-summary-total-value {
+  font-family: var(--ma-font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ma-text);
+}
+
+.ma-summary-total-label {
+  font-size: 10px;
+  color: var(--ma-text-tertiary);
+}
+
+.ma-summary-heading {
+  margin-top: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ma-text-secondary);
+}
+
+.ma-summary-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.ma-summary-row-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--ma-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ma-summary-row-detail {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ma-text-secondary);
+}
+
+.ma-summary-bar {
+  height: 4px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: var(--ma-border);
+  overflow: hidden;
+}
+
+.ma-summary-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--ma-accent);
+}
+
+.ma-summary-text {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ma-text);
+}
+
+.ma-summary-list {
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ma-text);
+}
+
+.ma-summary-status,
+.ma-summary-empty {
+  font-size: 12px;
+  color: var(--ma-text-secondary);
+}
+
+.ma-summary-status.busy {
+  animation: ma-pulse 1.5s ease-in-out infinite;
+}
+
+.ma-summary-footnote {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ma-text-tertiary);
+}
+
+.ma-summary-copy {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.ma-section-badge:empty {
+  display: none;
+}

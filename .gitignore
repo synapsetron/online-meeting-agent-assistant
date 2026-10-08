@@ -224,3 +224,6 @@ node_modules/
 # Vite / build output
 dist/
 .vite/
+
+# Backend structured logs
+logs/

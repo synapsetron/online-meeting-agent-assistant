@@ -63,7 +63,7 @@ class TestTransition:
         assert delta.status_changes.get("ag-2") == AgendaItemStatus.ACTIVE
         assert delta.new_active_item_id == "ag-2"
 
-    def test_no_transition_without_signal(self) -> None:
+    def test_match_without_signal_starts_item_when_none_active(self) -> None:
         tracker = AgendaTracker()
         agenda = _agenda()
         analysis = TranscriptAnalysis(
@@ -76,8 +76,32 @@ class TestTransition:
             segment_id="seg-1",
             current_time=1010.0,
         )
+        assert delta.new_active_item_id == "ag-1"
+        assert delta.status_changes.get("ag-1") == AgendaItemStatus.ACTIVE
+
+    def test_switches_to_other_item_without_signal_when_active_not_mentioned(self) -> None:
+        tracker = AgendaTracker()
+        agenda = _agenda()
+        agenda.items[0].status = AgendaItemStatus.ACTIVE
+        agenda.active_item_id = "ag-1"
+        analysis = TranscriptAnalysis(
+            matched_agenda_item_ids=["ag-2"],
+            is_transition_signal=False,
+        )
+        delta = tracker.track(agenda, analysis, "seg-1", 1010.0)
+        assert delta.new_active_item_id == "ag-2"
+
+    def test_no_switch_when_active_item_still_mentioned(self) -> None:
+        tracker = AgendaTracker()
+        agenda = _agenda()
+        agenda.items[0].status = AgendaItemStatus.ACTIVE
+        agenda.active_item_id = "ag-1"
+        analysis = TranscriptAnalysis(
+            matched_agenda_item_ids=["ag-1", "ag-2"],
+            is_transition_signal=False,
+        )
+        delta = tracker.track(agenda, analysis, "seg-1", 1010.0)
         assert delta.new_active_item_id is None
-        assert "ag-1" not in delta.status_changes
 
 
 class TestEvidenceTracking:
@@ -157,3 +181,20 @@ class TestInvalidTransitions:
         assert delta.new_active_item_id is None
         assert len(delta.status_changes) == 0
         assert len(delta.evidence_additions) == 0
+
+
+class TestElapsedTime:
+    def test_elapsed_is_per_item_and_handles_millisecond_timestamps(self) -> None:
+        tracker = AgendaTracker()
+        agenda = _agenda()
+        t0 = 1_700_000_000_000.0  # epoch ms, as sent by the browser
+        start = TranscriptAnalysis(matched_agenda_item_ids=["ag-1"])
+        d1 = tracker.track(agenda, start, "s1", t0)
+        assert d1.elapsed_updates["ag-1"] == 0.0
+        agenda.items[0].status = AgendaItemStatus.ACTIVE
+        agenda.active_item_id = "ag-1"
+        d2 = tracker.track(agenda, TranscriptAnalysis(), "s2", t0 + 90_000)
+        assert d2.elapsed_updates["ag-1"] == pytest.approx(90.0)
+        # mentioning the active item again must not restart its timer
+        d3 = tracker.track(agenda, start, "s3", t0 + 120_000)
+        assert d3.elapsed_updates["ag-1"] == pytest.approx(120.0)
