@@ -30,6 +30,10 @@ class Config:
     llm_flush_idle_seconds: float = 20.0
     llm_flush_min_words: int = 12  # do not flush less pending speech than this
     llm_max_output_tokens: int = 250
+    # The hint call also says which agenda item is being discussed; a proposal at
+    # or above this confidence switches the active item (keyword rules still apply).
+    llm_agenda_switch_enabled: bool = True
+    llm_agenda_switch_min_confidence: float = 0.7
     summary_interval: int = 10_000  # final segments between rolling-summary updates (effectively off)
     llm_timeout_seconds: float = 10.0
 

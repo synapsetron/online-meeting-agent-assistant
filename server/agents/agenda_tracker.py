@@ -9,6 +9,8 @@ from server.agents.transcript_analyzer import TranscriptAnalysis
 _VALID_TRANSITIONS: dict[AgendaItemStatus, set[AgendaItemStatus]] = {
     AgendaItemStatus.PENDING: {AgendaItemStatus.ACTIVE, AgendaItemStatus.SKIPPED},
     AgendaItemStatus.ACTIVE: {AgendaItemStatus.COVERED, AgendaItemStatus.DEFERRED},
+    # A topic that was left without evidence can be returned to.
+    AgendaItemStatus.DEFERRED: {AgendaItemStatus.ACTIVE},
 }
 
 
@@ -72,32 +74,7 @@ class AgendaTracker:
         can_start = analysis.is_transition_signal or not active_id or drifted_to_other
         if matched and can_start:
             target_id = other_ids[0] if other_ids else matched[0]
-            target_item = self._find_item(agenda, target_id)
-
-            if target_item and self._can_transition(
-                target_item.status, AgendaItemStatus.ACTIVE
-            ):
-                if (
-                    agenda.active_item_id
-                    and agenda.active_item_id != target_id
-                ):
-                    prev_item = self._find_item(agenda, agenda.active_item_id)
-                    if prev_item and self._can_transition(
-                        prev_item.status, AgendaItemStatus.COVERED
-                    ):
-                        prev_evidence = prev_item.evidence + delta.evidence_additions.get(
-                            prev_item.id, []
-                        )
-                        if prev_evidence:
-                            delta.status_changes[prev_item.id] = (
-                                AgendaItemStatus.COVERED
-                            )
-
-                delta.status_changes[target_id] = AgendaItemStatus.ACTIVE
-                delta.new_active_item_id = target_id
-                if agenda.active_item_id and agenda.active_item_id != target_id:
-                    self._pause(agenda.active_item_id, now)
-                self._start(agenda, target_id, now)
+            self._switch(agenda, delta, target_id, now)
 
         running_id = delta.new_active_item_id or agenda.active_item_id
         if running_id:
@@ -105,6 +82,55 @@ class AgendaTracker:
             delta.elapsed_updates[running_id] = self._elapsed(running_id, now)
 
         return delta
+
+    def activate(
+        self,
+        agenda: AgendaState,
+        target_id: str,
+        evidence_segment_ids: list[str],
+        current_time: float,
+    ) -> AgendaDelta:
+        """Apply a switch proposed from outside the keyword rules (the LLM's
+        semantic judgement). The same state machine and evidence rules apply;
+        an empty delta means the proposal was not applicable."""
+        delta = AgendaDelta()
+        if not evidence_segment_ids or target_id == agenda.active_item_id:
+            return delta
+        now = _to_seconds(current_time)
+        delta.evidence_additions[target_id] = list(evidence_segment_ids)
+        if not self._switch(agenda, delta, target_id, now):
+            return AgendaDelta()
+        delta.elapsed_updates[target_id] = self._elapsed(target_id, now)
+        return delta
+
+    def _switch(
+        self, agenda: AgendaState, delta: AgendaDelta, target_id: str, now: float
+    ) -> bool:
+        """Make *target_id* the active item, closing the previous one. An item
+        left with transcript evidence becomes covered; one without evidence is
+        deferred, never marked complete."""
+        target_item = self._find_item(agenda, target_id)
+        if not target_item or not self._can_transition(
+            target_item.status, AgendaItemStatus.ACTIVE
+        ):
+            return False
+
+        previous_id = agenda.active_item_id
+        if previous_id and previous_id != target_id:
+            prev_item = self._find_item(agenda, previous_id)
+            if prev_item and prev_item.status == AgendaItemStatus.ACTIVE:
+                has_evidence = bool(
+                    prev_item.evidence + delta.evidence_additions.get(prev_item.id, [])
+                )
+                delta.status_changes[prev_item.id] = (
+                    AgendaItemStatus.COVERED if has_evidence else AgendaItemStatus.DEFERRED
+                )
+            self._pause(previous_id, now)
+
+        delta.status_changes[target_id] = AgendaItemStatus.ACTIVE
+        delta.new_active_item_id = target_id
+        self._start(agenda, target_id, now)
+        return True
 
     @staticmethod
     def _find_item(agenda: AgendaState, item_id: str):
