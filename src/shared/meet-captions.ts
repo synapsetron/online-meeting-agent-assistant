@@ -1,4 +1,5 @@
 import type { TranscriptSegment } from "@/types/transcript";
+import { captionGrowth } from "./caption-growth";
 
 export type CaptionCallback = (segment: TranscriptSegment) => void;
 
@@ -7,6 +8,8 @@ const LOCAL_USER_NAMES = new Set(["you", "ви", "вы"]);
 const STABILITY_MS = 1000;
 const REDISCOVER_INTERVAL_MS = 1500;
 const SEEN_TTL_MS = 10 * 60 * 1000;
+/** Re-render dedup applies only to longer texts, so short repeated replies ("так") are kept. */
+const SEEN_MIN_WORDS = 5;
 
 const CC_ON_SELECTORS = [
   'button[aria-label="Turn on captions"]',
@@ -28,7 +31,10 @@ const CAPTION_REGION_LABELS = [
 
 interface PendingRow {
   speaker: string;
+  /** Text not yet emitted as final (the growth since the last commit). */
   text: string;
+  /** Full text of the caption row when this pending text was last updated. */
+  rowText: string;
   segmentId: string;
   timestamp: number;
   lastUpdated: number;
@@ -48,6 +54,7 @@ export class MeetCaptionObserver {
   private callbacks: Set<CaptionCallback> = new Set();
   private skipLocalUser = true;
   private localUserName: string | null = null;
+  private localSpeakerId = "local-user";
   private enableAttempts = 0;
   private lastEnableAt = 0;
   private isRunning = false;
@@ -62,6 +69,7 @@ export class MeetCaptionObserver {
 
   setLocalUserName(name: string | null): void {
     this.localUserName = name ? name.toLowerCase() : null;
+    this.localSpeakerId = name || "local-user";
   }
 
   private isLocalSpeaker(speaker: string): boolean {
@@ -85,7 +93,7 @@ export class MeetCaptionObserver {
     this.isRunning = false;
     this.stopObserving();
     for (const [key, row] of this.pendingRows) {
-      this.commitRow(key, row.speaker, row.text, row.segmentId, row.timestamp);
+      this.commitRow(key, row.speaker, row.text, row.segmentId, row.timestamp, row.rowText);
     }
     this.pendingRows.clear();
     this.committedTexts.clear();
@@ -278,19 +286,37 @@ export class MeetCaptionObserver {
       const parsed = this.parseCaptionRow(node);
       if (!parsed) continue;
 
-      if (this.skipLocalUser && this.isLocalSpeaker(parsed.speaker)) continue;
+      if (this.isLocalSpeaker(parsed.speaker)) {
+        if (this.skipLocalUser) continue;
+        // The user's own name (or "local-user") instead of Meet's "You" label.
+        parsed.speaker = this.localSpeakerId;
+      }
 
       const key = this.rowKey(node);
       currentKeys.add(key);
 
-      // Already committed rows stay in the DOM for a while: only emit new growth.
+      // A committed row stays in the DOM and keeps growing (and being revised):
+      // emit only what is new compared with what was already committed.
+      const rowText = parsed.text;
       const committed = this.committedTexts.get(key);
-      if (committed) {
-        if (committed.speaker === parsed.speaker && committed.text === parsed.text) continue;
-        if (committed.speaker === parsed.speaker && parsed.text.startsWith(committed.text)) {
-          parsed.text = parsed.text.slice(committed.text.length).trim();
-          if (!parsed.text) continue;
+      if (committed && committed.speaker === parsed.speaker) {
+        const growth = captionGrowth(committed.text, rowText);
+        if (growth.kind === "same") {
+          const waiting = this.pendingRows.get(key);
+          if (!waiting) {
+            committed.text = rowText;
+          } else if (now - waiting.lastUpdated >= STABILITY_MS) {
+            this.commitRow(key, waiting.speaker, waiting.text, waiting.segmentId, waiting.timestamp, waiting.rowText);
+            this.pendingRows.delete(key);
+          }
+          continue;
         }
+        if (growth.kind === "growth") {
+          parsed.text = growth.text;
+        } else {
+          this.committedTexts.delete(key);
+        }
+      } else if (committed) {
         this.committedTexts.delete(key);
       }
 
@@ -299,6 +325,7 @@ export class MeetCaptionObserver {
         if (existing.text !== parsed.text || existing.speaker !== parsed.speaker) {
           existing.speaker = parsed.speaker;
           existing.text = parsed.text;
+          existing.rowText = rowText;
           existing.lastUpdated = now;
 
           this.emitSegment({
@@ -312,7 +339,7 @@ export class MeetCaptionObserver {
           });
         }
         if (now - existing.lastUpdated >= STABILITY_MS) {
-          this.commitRow(key, existing.speaker, existing.text, existing.segmentId, existing.timestamp);
+          this.commitRow(key, existing.speaker, existing.text, existing.segmentId, existing.timestamp, existing.rowText);
           this.pendingRows.delete(key);
         }
       } else {
@@ -320,6 +347,7 @@ export class MeetCaptionObserver {
         this.pendingRows.set(key, {
           speaker: parsed.speaker,
           text: parsed.text,
+          rowText,
           segmentId,
           timestamp: now,
           lastUpdated: now,
@@ -338,7 +366,7 @@ export class MeetCaptionObserver {
 
     for (const [key, row] of this.pendingRows) {
       if (!currentKeys.has(key)) {
-        this.commitRow(key, row.speaker, row.text, row.segmentId, row.timestamp);
+        this.commitRow(key, row.speaker, row.text, row.segmentId, row.timestamp, row.rowText);
         this.pendingRows.delete(key);
         this.committedTexts.delete(key);
       }
@@ -351,17 +379,20 @@ export class MeetCaptionObserver {
     text: string,
     segmentId: string,
     timestamp: number,
+    rowText: string,
   ): void {
     if (!text) return;
 
-    const hash = `${speaker}\n${text}`;
-    const seenAt = this.seenHashes.get(hash);
-    if (seenAt && Date.now() - seenAt < SEEN_TTL_MS) return;
-    this.seenHashes.set(hash, Date.now());
+    // Remember the whole row as committed, so later growth is measured against it.
+    this.committedTexts.set(key, { speaker, text: rowText });
 
-    const prev = this.committedTexts.get(key);
-    const full = prev && prev.speaker === speaker ? `${prev.text} ${text}`.trim() : text;
-    this.committedTexts.set(key, { speaker, text: full });
+    if (text.split(/\s+/).length >= SEEN_MIN_WORDS) {
+      const hash = `${speaker}\n${text}`;
+      const seenAt = this.seenHashes.get(hash);
+      if (seenAt && Date.now() - seenAt < SEEN_TTL_MS) return;
+      this.seenHashes.set(hash, Date.now());
+    }
+
     this.emitSegment({
       id: segmentId,
       meetingId: this.meetingId,
