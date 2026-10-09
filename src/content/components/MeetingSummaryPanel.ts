@@ -1,6 +1,7 @@
 import type { MeetingReport, MeetingStats, MeetingSummaryPayload } from "@/types/summary";
 import { el, formatTime } from "../utils/dom";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { speakerColor } from "../utils/speaker-colors";
 
 /** How long to wait for the backend before telling the user nothing is coming. */
 const RESPONSE_TIMEOUT_MS = 45_000;
@@ -105,11 +106,16 @@ export class MeetingSummaryPanel {
     return el("div", { className: "ma-summary-heading", textContent: text });
   }
 
-  private barRow(label: string, share: number, detail: string, title?: string): HTMLElement {
+  private barRow(label: string, share: number, detail: string, title?: string, color?: string): HTMLElement {
     const fill = el("div", { className: "ma-summary-bar-fill" });
+    if (color) fill.style.background = color;
     fill.style.width = `${Math.max(0, Math.min(100, share * 100))}%`;
     const labelEl = el("span", { className: "ma-summary-row-label", textContent: label });
     if (title) labelEl.title = title;
+    if (color) {
+      labelEl.style.color = color;
+      labelEl.style.fontWeight = "600";
+    }
     return el("div", { className: "ma-summary-row" }, [
       el("div", { className: "ma-summary-row-head" }, [
         labelEl,
@@ -141,6 +147,8 @@ export class MeetingSummaryPanel {
           speakerName(speaker.speakerId),
           speaker.share,
           `${percent(speaker.share)} · ${speaker.words} words`,
+          undefined,
+          speakerColor(speaker.speakerId),
         ),
       );
     }

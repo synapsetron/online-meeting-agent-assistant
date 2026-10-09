@@ -2,6 +2,7 @@ import type { TranscriptSegment, Speaker } from "@/types/transcript";
 import { el, formatTimestamp } from "../utils/dom";
 import { MAX_VISIBLE_SEGMENTS } from "@/shared/constants";
 import { CollapsibleSection } from "./CollapsibleSection";
+import { speakerColor } from "../utils/speaker-colors";
 
 export class TranscriptPanel {
   readonly root: HTMLElement;
@@ -89,7 +90,7 @@ export class TranscriptPanel {
       className: "ma-transcript-speaker",
       textContent: displayName,
     });
-    if (speaker) speakerName.style.color = speaker.color;
+    speakerName.style.color = speaker?.color ?? speakerColor(segment.speakerId);
 
     const time = el("span", {
       className: "ma-transcript-time",
@@ -125,6 +126,13 @@ export class TranscriptPanel {
       textEl.textContent = segment.text;
       textEl.className = `ma-transcript-text${segment.isFinal ? "" : " partial"}`;
     }
+  }
+
+  clear() {
+    this.segments = [];
+    this.userScrolled = false;
+    this.list.innerHTML = `<div class="ma-transcript-empty">Waiting for transcript...</div>`;
+    this.section.setBadge("0");
   }
 
   destroy() {

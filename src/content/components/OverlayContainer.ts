@@ -13,6 +13,7 @@ import { CaptureStatusBar } from "./CaptureStatusBar";
 import { OverlaySettings } from "./OverlaySettings";
 import { MeetingSummaryPanel } from "./MeetingSummaryPanel";
 import type { MeetingSummaryPayload } from "@/types/summary";
+import { resetSpeakerColors } from "../utils/speaker-colors";
 
 export class OverlayContainer {
   readonly root: HTMLElement;
@@ -26,6 +27,7 @@ export class OverlayContainer {
   private summaryPanel: MeetingSummaryPanel;
   private bodyEl!: HTMLElement;
   private isMinimized = false;
+  private captureState: CaptureState = CaptureState.Idle;
   private cleanups: (() => void)[] = [];
   private onDismissHint: ((hintId: string) => void) | null = null;
   private onStopCapture: (() => void) | null = null;
@@ -190,9 +192,22 @@ export class OverlayContainer {
     this.bodyEl.scrollTop = 0;
   }
 
-  setCaptureState(state: CaptureState) {
-    if (state === CaptureState.Capturing) this.summaryPanel.clear();
-    this.captureStatusBar.update(state);
+  /** Drop everything shown for the previous meeting. */
+  private resetSession() {
+    this.summaryPanel.clear();
+    this.transcriptPanel.clear();
+    this.hintCards.clear();
+    resetSpeakerColors();
+  }
+
+  setCaptureState(state: CaptureState, startedAt?: number) {
+    // A new capture starts from a clean overlay; repeated syncs of the same
+    // state must not wipe what the current meeting has produced.
+    if (state === CaptureState.Capturing && this.captureState !== CaptureState.Capturing) {
+      this.resetSession();
+    }
+    this.captureState = state;
+    this.captureStatusBar.update(state, startedAt);
     this.transcriptPanel.setCapturing(state === CaptureState.Capturing);
   }
 

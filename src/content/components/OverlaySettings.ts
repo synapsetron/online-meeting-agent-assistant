@@ -53,7 +53,7 @@ export class OverlaySettings {
     this.backendInput.addEventListener("change", () => this.saveValue("backendUrl", this.backendInput.value));
 
     // Language
-    const langLabel = el("label", { className: "ma-settings-label", textContent: "Recognition language" });
+    const langLabel = el("label", { className: "ma-settings-label", textContent: "Meeting language (set the same in Meet → Settings → Captions)" });
     this.languageSelect = el("select", { className: "ma-settings-select" }) as HTMLSelectElement;
     for (const lang of LANGUAGES) {
       const opt = el("option", { value: lang.value, textContent: lang.label }) as HTMLOptionElement;

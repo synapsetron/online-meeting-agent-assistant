@@ -289,9 +289,19 @@ chrome.runtime.onMessage.addListener(
             captureState: CaptureState.Stopped,
           });
         } else {
-          if (!state.meeting.id) {
-            state.meeting.id = `meeting-${Date.now()}`;
-          }
+          // Every Start is a new meeting: nothing from the previous one carries over.
+          state.meeting.id = `meeting-${Date.now()}`;
+          state.hints = [];
+          state.recentTranscript = [];
+          state.sessionId = null;
+          state.agenda.activeItemId = null;
+          state.agenda.totalElapsedSeconds = 0;
+          state.agenda.items = state.agenda.items.map((item) => ({
+            ...item,
+            status: AgendaItemStatus.Pending,
+            elapsedSeconds: 0,
+            evidence: [],
+          }));
           if (!state.meeting.title) {
             state.meeting.title = "Meeting";
           }
@@ -313,6 +323,8 @@ chrome.runtime.onMessage.addListener(
             type: "CAPTURE_STATE",
             captureState: CaptureState.Capturing,
           });
+          // Show the reset agenda right away instead of the previous meeting's statuses.
+          broadcastToContentScripts({ type: "AGENDA_UPDATE", agenda: state.agenda });
         }
         sendResponse({ captureState: state.meeting.captureState });
         break;
