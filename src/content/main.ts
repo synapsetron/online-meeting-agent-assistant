@@ -1,19 +1,16 @@
 import { ShadowHost } from "./shadow-host";
 import { OverlayContainer } from "./components/OverlayContainer";
 import { ThemeManager } from "./components/ThemeManager";
-import { SpeechRecognitionService } from "@/shared/speech-recognition";
 import { MeetCaptionObserver } from "@/shared/meet-captions";
 import { CaptureState } from "@/types/meeting";
 import type { BackgroundToContent, ContentToBackground, PopupToBackground } from "@/types/messages";
 import { resolveLocalUserName } from "@/shared/meet-user";
 import { getMeetingCode, observeCallState } from "@/shared/meet-detector";
-import { DEFAULT_SPEECH_LANGUAGE } from "@/shared/constants";
 
 let disconnectObserver: (() => void) | null = null;
 let host: ShadowHost | null = null;
 let overlay: OverlayContainer | null = null;
 let theme: ThemeManager | null = null;
-let speechService: SpeechRecognitionService | null = null;
 let captionObserver: MeetCaptionObserver | null = null;
 
 function sendToBackground(msg: ContentToBackground | PopupToBackground): void {
@@ -24,64 +21,28 @@ function sendToBackground(msg: ContentToBackground | PopupToBackground): void {
   }
 }
 
-function startRecognition(language?: string) {
-  if (speechService) {
-    speechService.stop();
+/**
+ * Transcription comes from Google Meet's own captions for every participant,
+ * the local user included: Meet uses the microphone selected in the call and
+ * respects mute, and one source means no duplicated speech.
+ */
+function startRecognition() {
+  if (captionObserver) {
+    captionObserver.stop();
   }
 
-  const lang = language ?? DEFAULT_SPEECH_LANGUAGE;
-  speechService = new SpeechRecognitionService(lang);
-
-  // Remote participants come from Meet captions, independent of Web Speech support.
-  startCaptionObserver();
+  captionObserver = new MeetCaptionObserver();
+  captionObserver.setSkipLocalUser(false);
 
   chrome.runtime.sendMessage({ type: "GET_STATE" } as PopupToBackground).then((response) => {
     if (response?.meeting?.id) {
-      speechService?.setMeetingId(response.meeting.id);
       captionObserver?.setMeetingId(response.meeting.id);
     }
   }).catch(() => {});
 
   applyLocalUserName();
 
-  if (!speechService.isSupported()) {
-    console.warn("[Meeting Assistant] Web Speech API not supported in this browser");
-    return;
-  }
-
-  speechService.onTranscript((segment) => {
-    console.log("[Meeting Assistant] Transcript segment:", segment.text.substring(0, 50), "overlay:", !!overlay);
-    overlay?.addTranscript(segment);
-    sendToBackground({ type: "TRANSCRIPT_SEGMENT", segment });
-  });
-
-  speechService.start();
-  console.log("[Meeting Assistant] Speech recognition started, language:", lang);
-}
-
-/** Meet may render the account name late, so retry for a short while. */
-function applyLocalUserName(attempt = 0) {
-  resolveLocalUserName().then((name) => {
-    if (name) {
-      speechService?.setSpeakerId(name);
-      captionObserver?.setLocalUserName(name);
-      console.log("[Meeting Assistant] Local user name:", name);
-    } else if (attempt < 10 && speechService) {
-      setTimeout(() => applyLocalUserName(attempt + 1), 3000);
-    }
-  });
-}
-
-function startCaptionObserver() {
-  if (captionObserver) {
-    captionObserver.stop();
-  }
-
-  captionObserver = new MeetCaptionObserver();
-  captionObserver.setSkipLocalUser(true);
-
   captionObserver.onCaption((segment) => {
-    console.log("[Meeting Assistant] Caption from", segment.speakerId + ":", segment.text.substring(0, 50));
     overlay?.addTranscript(segment);
     sendToBackground({ type: "TRANSCRIPT_SEGMENT", segment });
   });
@@ -89,16 +50,22 @@ function startCaptionObserver() {
   captionObserver.start();
   captionObserver.tryEnableCaptions();
 
-  console.log("[Meeting Assistant] Caption observer started for remote participants");
+  console.log("[Meeting Assistant] Caption observer started");
+}
+
+/** Meet may render the account name late, so retry for a short while. */
+function applyLocalUserName(attempt = 0) {
+  resolveLocalUserName().then((name) => {
+    if (name) {
+      captionObserver?.setLocalUserName(name);
+      console.log("[Meeting Assistant] Local user name resolved");
+    } else if (attempt < 10 && captionObserver) {
+      setTimeout(() => applyLocalUserName(attempt + 1), 3000);
+    }
+  });
 }
 
 function stopRecognition() {
-  if (speechService) {
-    speechService.stop();
-    speechService = null;
-    console.log("[Meeting Assistant] Speech recognition stopped");
-  }
-
   if (captionObserver) {
     captionObserver.stop();
     captionObserver = null;
@@ -137,7 +104,7 @@ function initOverlay() {
     (message: BackgroundToContent, _sender, sendResponse) => {
       switch (message.type) {
         case "STATE_UPDATE":
-          overlay?.setCaptureState(message.meeting.captureState);
+          overlay?.setCaptureState(message.meeting.captureState, message.meeting.startTime);
           overlay?.updateAgenda(message.agenda);
           if (message.hints) {
             for (const hint of message.hints) {
@@ -173,9 +140,7 @@ function initOverlay() {
         case "CAPTURE_STATE":
           overlay?.setCaptureState(message.captureState);
           if (message.captureState === CaptureState.Capturing) {
-            loadLanguageSetting().then((lang) => {
-              startRecognition(lang);
-            });
+            startRecognition();
           } else if (
             message.captureState === CaptureState.Stopped ||
             message.captureState === CaptureState.Idle
@@ -217,15 +182,6 @@ function destroyOverlay() {
   host = null;
 
   console.log("[Meeting Assistant] Overlay destroyed");
-}
-
-async function loadLanguageSetting(): Promise<string> {
-  try {
-    const result = await chrome.storage.local.get("speechLanguage");
-    return (result.speechLanguage as string) || DEFAULT_SPEECH_LANGUAGE;
-  } catch {
-    return DEFAULT_SPEECH_LANGUAGE;
-  }
 }
 
 function init() {

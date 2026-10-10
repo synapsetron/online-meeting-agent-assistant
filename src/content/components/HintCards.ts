@@ -160,6 +160,12 @@ export class HintCards {
     return card;
   }
 
+  clear() {
+    this.hints = [];
+    this.list.innerHTML = `<div class="ma-hints-empty">No suggestions yet</div>`;
+    this.section.setBadge("0");
+  }
+
   destroy() {
     this.hints = [];
   }

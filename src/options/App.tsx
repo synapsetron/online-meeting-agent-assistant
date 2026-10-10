@@ -118,7 +118,7 @@ export function App() {
       <div className="options-section">
         <h2 className="options-section-title">Speech Recognition</h2>
         <div className="options-field">
-          <label className="options-label">Recognition language</label>
+          <label className="options-label">Meeting language</label>
           <select
             className="options-select"
             value={speechLanguage}
@@ -131,8 +131,9 @@ export function App() {
             ))}
           </select>
           <p className="options-desc">
-            Language used for speech recognition via the Web Speech API.
-            Choose the language spoken in your meetings.
+            Transcripts are read from Google Meet captions, so the language is
+            the one chosen in Meet: Settings → Captions. This value is not
+            applied to Meet automatically yet.
           </p>
         </div>
         <div className="options-field">
