@@ -1,0 +1,14 @@
+{
+ "n": 388,
+ "segments": 421,
+ "never": 33,
+ "median": 22.57200002670288,
+ "p95": 46.73925009965896,
+ "max": 73.6819999217987,
+ "hint_types": {
+  "topic_drift": 17,
+  "time_warning": 8,
+  "agenda_suggestion": 5,
+  "missed_item": 1
+ }
+}
