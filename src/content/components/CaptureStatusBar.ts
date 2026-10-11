@@ -44,7 +44,13 @@ export class CaptureStatusBar {
     }, [this.dot, this.label, this.timeEl, this.startBtn, this.stopBtn]);
   }
 
-  update(state: CaptureState) {
+  /**
+   * @param startedAt epoch ms when the capture began; lets the clock continue
+   *   from the real start instead of from whenever this update arrived.
+   */
+  update(state: CaptureState, startedAt?: number) {
+    // State syncs arrive every few seconds; only a real change may touch the timer.
+    if (state === this.state && state === CaptureState.Capturing) return;
     this.state = state;
 
     if (this.timerInterval) {
@@ -64,10 +70,10 @@ export class CaptureStatusBar {
         this.startBtn.style.display = "";
         break;
       case CaptureState.Capturing:
-        this.startTime = Date.now();
+        this.startTime = startedAt && startedAt <= Date.now() ? startedAt : Date.now();
         this.label.innerHTML = "<strong>Recording</strong>";
         this.stopBtn.style.display = "";
-        this.timeEl.textContent = "0:00";
+        this.timeEl.textContent = formatTime(Math.floor((Date.now() - this.startTime) / 1000));
         this.timerInterval = setInterval(() => {
           const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
           this.timeEl.textContent = formatTime(elapsed);

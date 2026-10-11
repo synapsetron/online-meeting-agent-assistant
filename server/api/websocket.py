@@ -272,6 +272,12 @@ async def websocket_endpoint(ws: WebSocket) -> None:
         ctx.orchestrator.set_hint_sink(
             _make_hint_sink(ws, ctx, session_id, session_manager)
         )
+
+        async def _push_agenda_update() -> None:
+            if session_manager.get_session(ctx.session_id) is not None:
+                await push_to_client(ws, AgendaUpdateMessage(agenda=ctx.state.agenda))
+
+        ctx.orchestrator.set_agenda_sink(_push_agenda_update)
         connected_at = time.monotonic()
         log_event(
             logger, "session_started",

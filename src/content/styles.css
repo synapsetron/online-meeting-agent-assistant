@@ -17,6 +17,14 @@
   --ma-danger: #ef4444;
   --ma-danger-light: #fee2e2;
   --ma-purple: #8b5cf6;
+  --ma-speaker-1: #2563eb;
+  --ma-speaker-2: #059669;
+  --ma-speaker-3: #c2410c;
+  --ma-speaker-4: #7c3aed;
+  --ma-speaker-5: #be185d;
+  --ma-speaker-6: #0e7490;
+  --ma-speaker-7: #a16207;
+  --ma-speaker-8: #4d7c0f;
   --ma-radius: 12px;
   --ma-radius-sm: 8px;
   --ma-radius-xs: 4px;
@@ -57,6 +65,14 @@
   --ma-danger: #f87171;
   --ma-danger-light: #3b1515;
   --ma-purple: #a78bfa;
+  --ma-speaker-1: #60a5fa;
+  --ma-speaker-2: #34d399;
+  --ma-speaker-3: #fb923c;
+  --ma-speaker-4: #a78bfa;
+  --ma-speaker-5: #f472b6;
+  --ma-speaker-6: #22d3ee;
+  --ma-speaker-7: #facc15;
+  --ma-speaker-8: #a3e635;
   --ma-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   --ma-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
 }

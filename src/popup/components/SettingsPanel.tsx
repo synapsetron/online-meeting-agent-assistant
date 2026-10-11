@@ -94,7 +94,7 @@ export function SettingsPanel({ onClose }: Props) {
       </div>
 
       <div className="settings-group">
-        <label className="settings-label">Recognition language</label>
+        <label className="settings-label">Meeting language (set the same in Meet → Settings → Captions)</label>
         <select
           className="settings-select"
           value={speechLanguage}

@@ -69,6 +69,7 @@ class Orchestrator:
         # Background LLM call (single-flight) and its delivery channel.
         self._llm_task: asyncio.Task[None] | None = None
         self._hint_sink: HintSink | None = None
+        self._agenda_sink: Callable[[], Awaitable[None]] | None = None
         self._undelivered_hints: list[Hint] = []
         self._closed = False
 
@@ -160,6 +161,11 @@ class Orchestrator:
         hints produced by background LLM calls. Without a sink the hints are kept
         and returned by ``drain()``."""
         self._hint_sink = callback
+
+    def set_agenda_sink(self, callback: Callable[[], Awaitable[None]] | None) -> None:
+        """Register ``async def callback() -> None`` called after a background
+        LLM call changed the agenda state (the active item was switched)."""
+        self._agenda_sink = callback
 
     async def drain(self) -> list[Hint]:
         """Wait for the in-flight background LLM call (and run an idle flush that
@@ -258,6 +264,7 @@ class Orchestrator:
                     trigger=trigger, hints=len(hints),
                 )
                 return
+            await self._apply_agenda_proposal(state)
             fresh = self._drop_repeated_hints(hints)
             if not fresh:
                 return
@@ -371,6 +378,43 @@ class Orchestrator:
             calls=self._llm_calls, max_calls=self._config.llm_max_calls_per_session,
             session_cost_usd=round(self._hint_gen.usage.cost_usd, 6),
         )
+
+    async def _apply_agenda_proposal(self, state: MeetingStateStore) -> None:
+        """Switch the active item when the model is confident the talk moved to
+        another agenda item. The tracker still enforces the state machine and
+        the evidence rule; the keyword rules keep working alongside."""
+        proposal = getattr(self._hint_gen, "last_agenda_proposal", None)
+        if proposal is None or not self._config.llm_agenda_switch_enabled:
+            return
+        active_before = state.agenda.active_item_id
+        if proposal.item_id == active_before:
+            return
+        if proposal.confidence < self._config.llm_agenda_switch_min_confidence:
+            log_event(
+                logger, "agenda_switch_skipped", reason="low_confidence",
+                proposed_item=proposal.item_id, confidence=round(proposal.confidence, 2),
+                min_confidence=self._config.llm_agenda_switch_min_confidence,
+            )
+            return
+        delta = self._tracker.activate(
+            state.agenda, proposal.item_id, proposal.evidence_segment_ids, time.time()
+        )
+        if delta.new_active_item_id is None:
+            log_event(
+                logger, "agenda_switch_skipped", reason="invalid_transition",
+                proposed_item=proposal.item_id,
+            )
+            return
+        state.apply_agenda_delta(delta)
+        log_event(
+            logger, "agenda_switched", source="llm",
+            active_before=active_before, active_after=delta.new_active_item_id,
+            confidence=round(proposal.confidence, 2),
+            evidence_segments=len(proposal.evidence_segment_ids),
+            status_changes={k: v.value for k, v in delta.status_changes.items()},
+        )
+        if self._agenda_sink is not None:
+            await self._agenda_sink()
 
     def _recently_shown(self) -> list[tuple[str, str]]:
         """Hint (type, item) pairs still inside the repeat cooldown, passed to the
